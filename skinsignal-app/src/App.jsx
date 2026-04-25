@@ -1,18 +1,164 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  campaigns,
-  clinic,
-  enquiries,
+  campaigns as initialCampaigns,
+  clinic as initialClinic,
+  enquiries as initialEnquiries,
   feedbackItems,
-  patients,
-  reviews,
-  stats
+  patients as initialPatients,
+  reviews as initialReviews
 } from "./data";
 
 const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Settings"];
+const storageKey = "skinsignal-console-state";
+
+function loadStoredState() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const value = window.localStorage.getItem(storageKey);
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
 
 function App() {
+  const storedState = loadStoredState();
   const [activeView, setActiveView] = useState("Dashboard");
+  const [notice, setNotice] = useState("Your demo workspace now saves changes in this browser.");
+  const [clinic, setClinic] = useState(storedState?.clinic ?? initialClinic);
+  const [reviews, setReviews] = useState(storedState?.reviews ?? initialReviews);
+  const [patients, setPatients] = useState(storedState?.patients ?? initialPatients);
+  const [campaigns, setCampaigns] = useState(storedState?.campaigns ?? initialCampaigns);
+  const [enquiries, setEnquiries] = useState(storedState?.enquiries ?? initialEnquiries);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        clinic,
+        reviews,
+        patients,
+        campaigns,
+        enquiries
+      })
+    );
+  }, [campaigns, clinic, enquiries, patients, reviews]);
+
+  const stats = useMemo(() => {
+    const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
+    const averageRating = reviews.length ? (ratingTotal / reviews.length).toFixed(1) : "0.0";
+    const pendingReplies = reviews.filter((review) => review.status !== "approved").length;
+    const sentRequests = patients.filter((patient) => patient.reviewStatus !== "pending").length;
+    const bookedLeads = enquiries.filter((entry) => entry.status === "booked").length;
+
+    return [
+      {
+        label: "Average Rating",
+        value: averageRating,
+        detail: `${reviews.length} reviews currently tracked`
+      },
+      {
+        label: "Review Requests Sent",
+        value: String(sentRequests),
+        detail: `${patients.length - sentRequests} patients still pending outreach`
+      },
+      {
+        label: "Pending Replies",
+        value: String(pendingReplies),
+        detail: `${reviews.filter((review) => review.status === "needs_edit").length} need edits`
+      },
+      {
+        label: "Booked Enquiries",
+        value: String(bookedLeads),
+        detail: `${enquiries.length} total leads in the tracker`,
+        accent: true
+      }
+    ];
+  }, [enquiries, patients, reviews]);
+
+  useEffect(() => {
+    if (!notice) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => setNotice(""), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  function updateReview(reviewId, updates) {
+    setReviews((currentReviews) =>
+      currentReviews.map((review) =>
+        review.id === reviewId ? { ...review, ...updates } : review
+      )
+    );
+  }
+
+  function queueReviewRequests() {
+    let sentCount = 0;
+
+    setPatients((currentPatients) =>
+      currentPatients.map((patient) => {
+        if (patient.reviewStatus === "pending") {
+          sentCount += 1;
+          return { ...patient, reviewStatus: "sent" };
+        }
+
+        return patient;
+      })
+    );
+
+    setNotice(
+      sentCount
+        ? `Queued review requests for ${sentCount} patient${sentCount > 1 ? "s" : ""}.`
+        : "All tracked patients already have a review action."
+    );
+    setActiveView("Patients");
+  }
+
+  function exportReport() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      clinic,
+      reviews,
+      patients,
+      campaigns,
+      enquiries
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json"
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "skinsignal-report.json";
+    link.click();
+    window.URL.revokeObjectURL(url);
+    setNotice("Exported a fresh JSON snapshot of the clinic workspace.");
+  }
+
+  function addPatient(patient) {
+    setPatients((currentPatients) => [{ id: Date.now(), ...patient }, ...currentPatients]);
+    setNotice(`Added ${patient.name} to the review request list.`);
+  }
+
+  function addCampaign(campaign) {
+    setCampaigns((currentCampaigns) => [{ id: Date.now(), ...campaign }, ...currentCampaigns]);
+    setNotice(`Created the "${campaign.name}" campaign.`);
+  }
+
+  function addEnquiry(enquiry) {
+    setEnquiries((currentEnquiries) => [{ id: Date.now(), ...enquiry }, ...currentEnquiries]);
+    setNotice(`Added ${enquiry.name} to the lead tracker.`);
+  }
+
+  function saveClinic(updates) {
+    setClinic((currentClinic) => ({ ...currentClinic, ...updates }));
+    setNotice("Clinic settings saved to the local demo workspace.");
+  }
 
   return (
     <div className="app-shell">
@@ -51,26 +197,56 @@ function App() {
           <div>
             <p className="eyebrow">{activeView}</p>
             <h1>Good afternoon, {clinic.owner}</h1>
-            <p className="muted">Here’s what needs your attention today.</p>
+            <p className="muted">Here&apos;s what needs your attention today.</p>
           </div>
           <div className="topbar-actions">
-            <button className="ghost-button" type="button">Export Report</button>
-            <button className="primary-button" type="button">Send Review Requests</button>
+            <button className="ghost-button" onClick={exportReport} type="button">
+              Export Report
+            </button>
+            <button className="primary-button" onClick={queueReviewRequests} type="button">
+              Send Review Requests
+            </button>
           </div>
         </header>
 
-        {activeView === "Dashboard" && <DashboardView />}
-        {activeView === "Reviews" && <ReviewsView />}
-        {activeView === "Patients" && <PatientsView />}
-        {activeView === "Campaigns" && <CampaignsView />}
-        {activeView === "Enquiries" && <EnquiriesView />}
-        {activeView === "Settings" && <SettingsView />}
+        {notice ? <div className="notice-banner">{notice}</div> : null}
+
+        {activeView === "Dashboard" && (
+          <DashboardView
+            campaigns={campaigns}
+            enquiries={enquiries}
+            feedbackItems={feedbackItems}
+            reviews={reviews}
+            setActiveView={setActiveView}
+            stats={stats}
+            updateReview={updateReview}
+          />
+        )}
+        {activeView === "Reviews" && <ReviewsView reviews={reviews} updateReview={updateReview} />}
+        {activeView === "Patients" && (
+          <PatientsView addPatient={addPatient} patients={patients} setPatients={setPatients} />
+        )}
+        {activeView === "Campaigns" && (
+          <CampaignsView addCampaign={addCampaign} campaigns={campaigns} />
+        )}
+        {activeView === "Enquiries" && (
+          <EnquiriesView addEnquiry={addEnquiry} enquiries={enquiries} setEnquiries={setEnquiries} />
+        )}
+        {activeView === "Settings" && <SettingsView clinic={clinic} saveClinic={saveClinic} />}
       </main>
     </div>
   );
 }
 
-function DashboardView() {
+function DashboardView({
+  campaigns,
+  enquiries,
+  feedbackItems,
+  reviews,
+  setActiveView,
+  stats,
+  updateReview
+}) {
   return (
     <>
       <section className="stats-grid">
@@ -90,11 +266,13 @@ function DashboardView() {
               <p className="eyebrow">Reviews</p>
               <h2>Reply queue</h2>
             </div>
-            <button className="link-button" type="button">View all</button>
+            <button className="link-button" onClick={() => setActiveView("Reviews")} type="button">
+              View all
+            </button>
           </div>
 
           {reviews.slice(0, 2).map((review) => (
-            <ReviewRow key={review.id} review={review} />
+            <ReviewRow key={review.id} review={review} updateReview={updateReview} />
           ))}
         </div>
 
@@ -108,15 +286,15 @@ function DashboardView() {
             </div>
             <div className="mini-metrics">
               <div>
-                <strong>142</strong>
+                <strong>{campaigns.reduce((sum, campaign) => sum + campaign.sent, 0)}</strong>
                 <span>sent</span>
               </div>
               <div>
-                <strong>91</strong>
+                <strong>{campaigns.reduce((sum, campaign) => sum + campaign.delivered, 0)}</strong>
                 <span>delivered</span>
               </div>
               <div>
-                <strong>24</strong>
+                <strong>{campaigns.reduce((sum, campaign) => sum + campaign.clicked, 0)}</strong>
                 <span>clicked</span>
               </div>
             </div>
@@ -128,7 +306,7 @@ function DashboardView() {
                 <p className="eyebrow">Private Feedback</p>
                 <h2>Needs attention</h2>
               </div>
-              <span className="status-pill warm">2 open</span>
+              <span className="status-pill warm">{feedbackItems.length} open</span>
             </div>
             <SimpleList items={feedbackItems} titleKey="title" detailKey="submittedAt" />
           </section>
@@ -139,7 +317,9 @@ function DashboardView() {
                 <p className="eyebrow">Enquiries</p>
                 <h2>Lead tracker</h2>
               </div>
-              <span className="status-pill cool">8 booked</span>
+              <span className="status-pill cool">
+                {enquiries.filter((entry) => entry.status === "booked").length} booked
+              </span>
             </div>
             <SimpleList items={enquiries} titleKey="name" detailKey="note" />
           </section>
@@ -149,7 +329,17 @@ function DashboardView() {
   );
 }
 
-function ReviewsView() {
+function ReviewsView({ reviews, updateReview }) {
+  const [filter, setFilter] = useState("all");
+
+  const filteredReviews = reviews.filter((review) => {
+    if (filter === "all") {
+      return true;
+    }
+
+    return review.status === filter;
+  });
+
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -158,18 +348,59 @@ function ReviewsView() {
           <h2>All incoming reviews</h2>
         </div>
         <div className="toolbar">
-          <button className="ghost-button small" type="button">Import reviews</button>
-          <button className="primary-button small" type="button">Generate drafts</button>
+          {["all", "ready", "needs_edit", "approved"].map((option) => (
+            <button
+              key={option}
+              className={`ghost-button small ${filter === option ? "is-selected" : ""}`}
+              onClick={() => setFilter(option)}
+              type="button"
+            >
+              {option.replace("_", " ")}
+            </button>
+          ))}
         </div>
       </div>
-      {reviews.map((review) => (
-        <ReviewRow key={review.id} review={review} />
+      {filteredReviews.map((review) => (
+        <ReviewRow key={review.id} review={review} updateReview={updateReview} />
       ))}
     </section>
   );
 }
 
-function PatientsView() {
+function PatientsView({ addPatient, patients, setPatients }) {
+  const [form, setForm] = useState({
+    name: "",
+    visitDate: new Date().toISOString().slice(0, 10),
+    reviewStatus: "pending",
+    feedbackStatus: "unknown"
+  });
+
+  function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!form.name.trim()) {
+      return;
+    }
+
+    addPatient({
+      ...form,
+      name: form.name.trim()
+    });
+
+    setForm((currentForm) => ({
+      ...currentForm,
+      name: ""
+    }));
+  }
+
+  function queueSingleRequest(patientId) {
+    setPatients((currentPatients) =>
+      currentPatients.map((patient) =>
+        patient.id === patientId ? { ...patient, reviewStatus: "sent" } : patient
+      )
+    );
+  }
+
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -177,11 +408,47 @@ function PatientsView() {
           <p className="eyebrow">Patients</p>
           <h2>Review request list</h2>
         </div>
-        <div className="toolbar">
-          <button className="ghost-button small" type="button">Download CSV template</button>
-          <button className="primary-button small" type="button">Upload patient list</button>
-        </div>
       </div>
+
+      <form className="inline-form" onSubmit={handleSubmit}>
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
+          placeholder="Patient name"
+          value={form.name}
+        />
+        <input
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, visitDate: event.target.value }))
+          }
+          type="date"
+          value={form.visitDate}
+        />
+        <select
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, reviewStatus: event.target.value }))
+          }
+          value={form.reviewStatus}
+        >
+          <option value="pending">pending</option>
+          <option value="sent">sent</option>
+          <option value="clicked">clicked</option>
+          <option value="private_feedback">private_feedback</option>
+        </select>
+        <select
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, feedbackStatus: event.target.value }))
+          }
+          value={form.feedbackStatus}
+        >
+          <option value="unknown">unknown</option>
+          <option value="happy">happy</option>
+          <option value="needs_followup">needs_followup</option>
+        </select>
+        <button className="primary-button small" type="submit">
+          Add patient
+        </button>
+      </form>
+
       <div className="table-card">
         <table>
           <thead>
@@ -190,6 +457,7 @@ function PatientsView() {
               <th>Visit Date</th>
               <th>Review Status</th>
               <th>Feedback Status</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -199,6 +467,16 @@ function PatientsView() {
                 <td>{patient.visitDate}</td>
                 <td><span className="chip">{patient.reviewStatus}</span></td>
                 <td><span className="chip chip-soft">{patient.feedbackStatus}</span></td>
+                <td>
+                  <button
+                    className="ghost-button small"
+                    disabled={patient.reviewStatus === "sent"}
+                    onClick={() => queueSingleRequest(patient.id)}
+                    type="button"
+                  >
+                    {patient.reviewStatus === "sent" ? "Queued" : "Queue request"}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -208,7 +486,39 @@ function PatientsView() {
   );
 }
 
-function CampaignsView() {
+function CampaignsView({ addCampaign, campaigns }) {
+  const [form, setForm] = useState({
+    name: "",
+    sent: 0,
+    delivered: 0,
+    clicked: 0,
+    status: "draft"
+  });
+
+  function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!form.name.trim()) {
+      return;
+    }
+
+    addCampaign({
+      ...form,
+      name: form.name.trim(),
+      sent: Number(form.sent),
+      delivered: Number(form.delivered),
+      clicked: Number(form.clicked)
+    });
+
+    setForm({
+      name: "",
+      sent: 0,
+      delivered: 0,
+      clicked: 0,
+      status: "draft"
+    });
+  }
+
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -216,8 +526,49 @@ function CampaignsView() {
           <p className="eyebrow">Campaigns</p>
           <h2>WhatsApp request flows</h2>
         </div>
-        <button className="primary-button small" type="button">Create campaign</button>
       </div>
+
+      <form className="inline-form" onSubmit={handleSubmit}>
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
+          placeholder="Campaign name"
+          value={form.name}
+        />
+        <input
+          min="0"
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, sent: event.target.value }))}
+          placeholder="Sent"
+          type="number"
+          value={form.sent}
+        />
+        <input
+          min="0"
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, delivered: event.target.value }))
+          }
+          placeholder="Delivered"
+          type="number"
+          value={form.delivered}
+        />
+        <input
+          min="0"
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, clicked: event.target.value }))}
+          placeholder="Clicked"
+          type="number"
+          value={form.clicked}
+        />
+        <select
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, status: event.target.value }))}
+          value={form.status}
+        >
+          <option value="draft">draft</option>
+          <option value="active">active</option>
+        </select>
+        <button className="primary-button small" type="submit">
+          Create campaign
+        </button>
+      </form>
+
       <div className="campaign-grid">
         {campaigns.map((campaign) => (
           <article key={campaign.id} className="campaign-card">
@@ -248,7 +599,49 @@ function CampaignsView() {
   );
 }
 
-function EnquiriesView() {
+function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
+  const [form, setForm] = useState({
+    name: "",
+    status: "awaiting_reply",
+    note: ""
+  });
+
+  function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!form.name.trim()) {
+      return;
+    }
+
+    addEnquiry({
+      ...form,
+      name: form.name.trim(),
+      note: form.note.trim() || "Fresh enquiry captured"
+    });
+
+    setForm({
+      name: "",
+      status: "awaiting_reply",
+      note: ""
+    });
+  }
+
+  function cycleStatus(entryId) {
+    const statuses = ["awaiting_reply", "follow_up_sent", "booked"];
+
+    setEnquiries((currentEnquiries) =>
+      currentEnquiries.map((entry) => {
+        if (entry.id !== entryId) {
+          return entry;
+        }
+
+        const currentIndex = statuses.indexOf(entry.status);
+        const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+        return { ...entry, status: nextStatus };
+      })
+    );
+  }
+
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -256,8 +649,32 @@ function EnquiriesView() {
           <p className="eyebrow">Enquiries</p>
           <h2>Incoming lead tracker</h2>
         </div>
-        <button className="ghost-button small" type="button">Filter by status</button>
       </div>
+
+      <form className="inline-form" onSubmit={handleSubmit}>
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
+          placeholder="Lead name"
+          value={form.name}
+        />
+        <select
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, status: event.target.value }))}
+          value={form.status}
+        >
+          <option value="awaiting_reply">awaiting_reply</option>
+          <option value="follow_up_sent">follow_up_sent</option>
+          <option value="booked">booked</option>
+        </select>
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, note: event.target.value }))}
+          placeholder="Latest note"
+          value={form.note}
+        />
+        <button className="primary-button small" type="submit">
+          Add enquiry
+        </button>
+      </form>
+
       <div className="table-card">
         <table>
           <thead>
@@ -265,6 +682,7 @@ function EnquiriesView() {
               <th>Lead</th>
               <th>Status</th>
               <th>Latest Note</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -273,6 +691,11 @@ function EnquiriesView() {
                 <td>{entry.name}</td>
                 <td><span className="chip">{entry.status}</span></td>
                 <td>{entry.note}</td>
+                <td>
+                  <button className="ghost-button small" onClick={() => cycleStatus(entry.id)} type="button">
+                    Advance status
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -282,7 +705,18 @@ function EnquiriesView() {
   );
 }
 
-function SettingsView() {
+function SettingsView({ clinic, saveClinic }) {
+  const [form, setForm] = useState(clinic);
+
+  useEffect(() => {
+    setForm(clinic);
+  }, [clinic]);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    saveClinic(form);
+  }
+
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -291,49 +725,92 @@ function SettingsView() {
           <h2>Clinic profile</h2>
         </div>
       </div>
-      <div className="settings-grid">
-        <article className="settings-card">
+
+      <form className="settings-form" onSubmit={handleSubmit}>
+        <label>
           <span className="settings-label">Clinic Name</span>
-          <strong>{clinic.name}</strong>
-        </article>
-        <article className="settings-card">
+          <input
+            onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
+            value={form.name}
+          />
+        </label>
+        <label>
           <span className="settings-label">City</span>
-          <strong>{clinic.city}</strong>
-        </article>
-        <article className="settings-card">
+          <input
+            onChange={(event) => setForm((currentForm) => ({ ...currentForm, city: event.target.value }))}
+            value={form.city}
+          />
+        </label>
+        <label>
           <span className="settings-label">Plan</span>
-          <strong>{clinic.plan}</strong>
-        </article>
-        <article className="settings-card">
-          <span className="settings-label">Google Review Link</span>
-          <strong>Connected manually in MVP</strong>
-        </article>
-      </div>
+          <select
+            onChange={(event) => setForm((currentForm) => ({ ...currentForm, plan: event.target.value }))}
+            value={form.plan}
+          >
+            <option value="Launch Plan">Launch Plan</option>
+            <option value="Growth Plan">Growth Plan</option>
+            <option value="Premium Plan">Premium Plan</option>
+          </select>
+        </label>
+        <label>
+          <span className="settings-label">Owner</span>
+          <input
+            onChange={(event) => setForm((currentForm) => ({ ...currentForm, owner: event.target.value }))}
+            value={form.owner}
+          />
+        </label>
+        <button className="primary-button settings-submit" type="submit">
+          Save settings
+        </button>
+      </form>
     </section>
   );
 }
 
-function ReviewRow({ review }) {
+function ReviewRow({ review, updateReview }) {
   return (
     <div className="review-row">
       <div className="review-meta">
         <div className="avatar">{review.name[0]}</div>
         <div>
           <strong>{review.name}</strong>
-          <p>{review.source} • {review.rating} stars</p>
+          <p>
+            {review.source} • {review.rating} stars
+          </p>
+          <span className={`status-pill ${review.status === "needs_edit" ? "warm" : "cool"}`}>
+            {review.status.replace("_", " ")}
+          </span>
         </div>
       </div>
       <div className="review-body">
         <p>{review.text}</p>
         <div className="draft-box">
           <span>AI draft reply</span>
-          <p>{review.draft}</p>
+          <textarea
+            className="draft-input"
+            onChange={(event) => updateReview(review.id, { draft: event.target.value })}
+            value={review.draft}
+          />
         </div>
       </div>
       <div className="review-actions">
-        <button className="ghost-button small" type="button">Edit</button>
-        <button className="primary-button small" type="button">
-          {review.status === "needs_edit" ? "Revise" : "Approve"}
+        <button
+          className="ghost-button small"
+          onClick={() =>
+            updateReview(review.id, {
+              status: review.status === "needs_edit" ? "ready" : "needs_edit"
+            })
+          }
+          type="button"
+        >
+          {review.status === "needs_edit" ? "Mark ready" : "Needs edit"}
+        </button>
+        <button
+          className="primary-button small"
+          onClick={() => updateReview(review.id, { status: "approved" })}
+          type="button"
+        >
+          Approve
         </button>
       </div>
     </div>
