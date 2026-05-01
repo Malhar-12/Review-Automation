@@ -7,6 +7,7 @@ import {
   patients as initialPatients,
   reviews as initialReviews
 } from "./data";
+import { hasSupabaseEnv, supabase } from "./supabase";
 import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
 const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Settings"];
@@ -42,6 +43,9 @@ function normalizeRemoteState(remoteState) {
 
 function App() {
   const storedState = loadStoredState();
+  const [authReady, setAuthReady] = useState(!hasSupabaseEnv);
+  const [session, setSession] = useState(null);
+  const [authError, setAuthError] = useState("");
   const [activeView, setActiveView] = useState("Dashboard");
   const [notice, setNotice] = useState("Your workspace now saves changes in this browser and can sync with Supabase.");
   const [syncStatus, setSyncStatus] = useState("local");
@@ -54,6 +58,47 @@ function App() {
   const hasLoadedRemoteRef = useRef(false);
 
   useEffect(() => {
+    if (!hasSupabaseEnv || !supabase) {
+      setAuthReady(true);
+      return undefined;
+    }
+
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) {
+        return;
+      }
+
+      if (error) {
+        setAuthError(error.message);
+      }
+
+      setSession(data.session ?? null);
+      setAuthReady(true);
+    });
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession ?? null);
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasSupabaseEnv && !session) {
+      hasLoadedRemoteRef.current = false;
+      remoteReadyRef.current = false;
+      setSyncStatus("local");
+      return undefined;
+    }
+
     let cancelled = false;
 
     async function bootstrapRemoteState() {
@@ -88,7 +133,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -247,6 +292,37 @@ function App() {
     setNotice("Clinic settings saved.");
   }
 
+  async function handleLogout() {
+    if (!supabase) {
+      return;
+    }
+
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+
+    setNotice("Signed out successfully.");
+  }
+
+  if (!authReady) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <p className="eyebrow">SkinSignal</p>
+          <h1>Checking your workspace</h1>
+          <p className="muted">Loading your secure clinic console.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasSupabaseEnv && !session) {
+    return <AuthScreen authError={authError} setAuthError={setAuthError} />;
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -288,12 +364,20 @@ function App() {
             <p className="muted">Here&apos;s what needs your attention today.</p>
           </div>
           <div className="topbar-actions">
+            {session?.user?.email ? (
+              <span className="user-chip">{session.user.email}</span>
+            ) : null}
             <button className="ghost-button" onClick={exportReport} type="button">
               Export Report
             </button>
             <button className="primary-button" onClick={queueReviewRequests} type="button">
               Send Review Requests
             </button>
+            {hasSupabaseEnv ? (
+              <button className="ghost-button" onClick={handleLogout} type="button">
+                Logout
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -322,6 +406,103 @@ function App() {
         )}
         {activeView === "Settings" && <SettingsView clinic={clinic} saveClinic={saveClinic} />}
       </main>
+    </div>
+  );
+}
+
+function AuthScreen({ authError, setAuthError }) {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!supabase) {
+      setAuthError("Supabase is not configured for authentication.");
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthError("");
+    setStatusMessage("");
+
+    const action =
+      mode === "signin"
+        ? supabase.auth.signInWithPassword({ email, password })
+        : supabase.auth.signUp({ email, password });
+
+    const { error } = await action;
+
+    setSubmitting(false);
+
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+
+    if (mode === "signup") {
+      setStatusMessage("Account created. Check your inbox if email confirmation is enabled.");
+    } else {
+      setStatusMessage("Signed in successfully.");
+    }
+  }
+
+  return (
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div>
+          <p className="eyebrow">SkinSignal Secure Access</p>
+          <h1>{mode === "signin" ? "Clinic login" : "Create clinic access"}</h1>
+          <p className="muted">
+            {mode === "signin"
+              ? "Sign in to open the live review automation dashboard."
+              : "Create an account to protect this live dashboard before sharing it."}
+          </p>
+        </div>
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label>
+            <span className="settings-label">Email</span>
+            <input
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              value={email}
+            />
+          </label>
+          <label>
+            <span className="settings-label">Password</span>
+            <input
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              minLength={6}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              value={password}
+            />
+          </label>
+          <button className="primary-button auth-submit" disabled={submitting} type="submit">
+            {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
+          </button>
+        </form>
+
+        {authError ? <div className="auth-error">{authError}</div> : null}
+        {statusMessage ? <div className="notice-banner auth-status">{statusMessage}</div> : null}
+
+        <button
+          className="link-button auth-switch"
+          onClick={() => {
+            setMode((currentMode) => (currentMode === "signin" ? "signup" : "signin"));
+            setAuthError("");
+            setStatusMessage("");
+          }}
+          type="button"
+        >
+          {mode === "signin" ? "Need an account? Create one" : "Already have an account? Sign in"}
+        </button>
+      </div>
     </div>
   );
 }
