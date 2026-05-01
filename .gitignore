@@ -1,3 +1,7 @@
 skinsignal-app/node_modules/
 skinsignal-app/dist/
+.env
+.env.local
+skinsignal-app/.env
+skinsignal-app/.env.local
 *.log

@@ -151,6 +151,11 @@ textarea {
   margin: 10px 0 0;
 }
 
+.sidebar-sync {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.84rem;
+}
+
 .main-panel {
   padding: 28px;
 }
@@ -503,6 +508,14 @@ th {
 .inline-form {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: end;
+}
+
+.campaign-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.enquiry-form {
+  grid-template-columns: 1.1fr 0.8fr 1.2fr auto;
 }
 
 .settings-form {

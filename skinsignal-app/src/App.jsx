@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   campaigns as initialCampaigns,
   clinic as initialClinic,
@@ -7,9 +7,11 @@ import {
   patients as initialPatients,
   reviews as initialReviews
 } from "./data";
+import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
 const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Settings"];
 const storageKey = "skinsignal-console-state";
+const clinicSeed = { id: "default-clinic", ...initialClinic };
 
 function loadStoredState() {
   if (typeof window === "undefined") {
@@ -24,15 +26,69 @@ function loadStoredState() {
   }
 }
 
+function ensureClinicId(clinic) {
+  return clinic?.id ? clinic : { ...clinic, id: "default-clinic" };
+}
+
+function normalizeRemoteState(remoteState) {
+  return {
+    clinic: ensureClinicId(remoteState.clinic ?? clinicSeed),
+    reviews: remoteState.reviews?.length ? remoteState.reviews : initialReviews,
+    patients: remoteState.patients?.length ? remoteState.patients : initialPatients,
+    campaigns: remoteState.campaigns?.length ? remoteState.campaigns : initialCampaigns,
+    enquiries: remoteState.enquiries?.length ? remoteState.enquiries : initialEnquiries
+  };
+}
+
 function App() {
   const storedState = loadStoredState();
   const [activeView, setActiveView] = useState("Dashboard");
-  const [notice, setNotice] = useState("Your demo workspace now saves changes in this browser.");
-  const [clinic, setClinic] = useState(storedState?.clinic ?? initialClinic);
+  const [notice, setNotice] = useState("Your workspace now saves changes in this browser and can sync with Supabase.");
+  const [syncStatus, setSyncStatus] = useState("local");
+  const [clinic, setClinic] = useState(ensureClinicId(storedState?.clinic ?? clinicSeed));
   const [reviews, setReviews] = useState(storedState?.reviews ?? initialReviews);
   const [patients, setPatients] = useState(storedState?.patients ?? initialPatients);
   const [campaigns, setCampaigns] = useState(storedState?.campaigns ?? initialCampaigns);
   const [enquiries, setEnquiries] = useState(storedState?.enquiries ?? initialEnquiries);
+  const remoteReadyRef = useRef(false);
+  const hasLoadedRemoteRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapRemoteState() {
+      const result = await loadRemoteState();
+
+      if (cancelled) {
+        return;
+      }
+
+      hasLoadedRemoteRef.current = true;
+
+      if (result.available && result.state) {
+        const nextState = normalizeRemoteState(result.state);
+        setClinic(nextState.clinic);
+        setReviews(nextState.reviews);
+        setPatients(nextState.patients);
+        setCampaigns(nextState.campaigns);
+        setEnquiries(nextState.enquiries);
+        setSyncStatus("supabase");
+        remoteReadyRef.current = true;
+        setNotice("Connected to Supabase. Changes now sync to your project tables.");
+        return;
+      }
+
+      setSyncStatus("local");
+      remoteReadyRef.current = false;
+      setNotice(`Using local demo mode. ${result.reason ?? getSchemaHelp()}`);
+    }
+
+    bootstrapRemoteState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -45,6 +101,36 @@ function App() {
         enquiries
       })
     );
+  }, [campaigns, clinic, enquiries, patients, reviews]);
+
+  useEffect(() => {
+    if (!hasLoadedRemoteRef.current || !remoteReadyRef.current) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function syncState() {
+      const result = await pushRemoteState({ clinic, reviews, patients, campaigns, enquiries });
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!result.ok) {
+        remoteReadyRef.current = false;
+        setSyncStatus("local");
+        setNotice(`Supabase sync paused. ${result.reason ?? getSchemaHelp()}`);
+      } else {
+        setSyncStatus("supabase");
+      }
+    }
+
+    syncState();
+
+    return () => {
+      cancelled = true;
+    };
   }, [campaigns, clinic, enquiries, patients, reviews]);
 
   const stats = useMemo(() => {
@@ -84,7 +170,7 @@ function App() {
       return undefined;
     }
 
-    const timeout = window.setTimeout(() => setNotice(""), 3000);
+    const timeout = window.setTimeout(() => setNotice(""), 4500);
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
@@ -121,6 +207,7 @@ function App() {
   function exportReport() {
     const payload = {
       exportedAt: new Date().toISOString(),
+      syncStatus,
       clinic,
       reviews,
       patients,
@@ -157,7 +244,7 @@ function App() {
 
   function saveClinic(updates) {
     setClinic((currentClinic) => ({ ...currentClinic, ...updates }));
-    setNotice("Clinic settings saved to the local demo workspace.");
+    setNotice("Clinic settings saved.");
   }
 
   return (
@@ -189,6 +276,7 @@ function App() {
           <h3>{clinic.name}</h3>
           <p>{clinic.city}</p>
           <span className="status-pill">{clinic.plan}</span>
+          <p className="sidebar-sync">Sync: {syncStatus === "supabase" ? "Supabase live" : "Local only"}</p>
         </div>
       </aside>
 
@@ -410,7 +498,7 @@ function PatientsView({ addPatient, patients, setPatients }) {
         </div>
       </div>
 
-      <form className="inline-form" onSubmit={handleSubmit}>
+      <form className="inline-form patients-form" onSubmit={handleSubmit}>
         <input
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
           placeholder="Patient name"
@@ -528,7 +616,7 @@ function CampaignsView({ addCampaign, campaigns }) {
         </div>
       </div>
 
-      <form className="inline-form" onSubmit={handleSubmit}>
+      <form className="inline-form campaign-form" onSubmit={handleSubmit}>
         <input
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
           placeholder="Campaign name"
@@ -651,7 +739,7 @@ function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
         </div>
       </div>
 
-      <form className="inline-form" onSubmit={handleSubmit}>
+      <form className="inline-form enquiry-form" onSubmit={handleSubmit}>
         <input
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
           placeholder="Lead name"
