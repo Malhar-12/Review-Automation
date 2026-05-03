@@ -102,7 +102,7 @@ function App() {
     let cancelled = false;
 
     async function bootstrapRemoteState() {
-      const result = await loadRemoteState();
+      const result = await loadRemoteState(session?.user?.id);
 
       if (cancelled) {
         return;
@@ -156,7 +156,14 @@ function App() {
     let cancelled = false;
 
     async function syncState() {
-      const result = await pushRemoteState({ clinic, reviews, patients, campaigns, enquiries });
+      const result = await pushRemoteState({
+        clinic,
+        reviews,
+        patients,
+        campaigns,
+        enquiries,
+        userId: session?.user?.id
+      });
 
       if (cancelled) {
         return;
@@ -176,7 +183,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [campaigns, clinic, enquiries, patients, reviews]);
+  }, [campaigns, clinic, enquiries, patients, reviews, session]);
 
   const stats = useMemo(() => {
     const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);

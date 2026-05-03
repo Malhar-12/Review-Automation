@@ -1,5 +1,8 @@
+create extension if not exists pgcrypto;
+
 create table if not exists clinic_settings (
-  id text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id text not null,
   name text not null,
   city text not null,
   plan text not null,
@@ -8,7 +11,8 @@ create table if not exists clinic_settings (
 );
 
 create table if not exists reviews (
-  id bigint primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id bigint not null,
   name text not null,
   rating integer not null,
   source text not null,
@@ -19,16 +23,18 @@ create table if not exists reviews (
 );
 
 create table if not exists patients (
-  id bigint primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id bigint not null,
   name text not null,
-  visitDate date not null,
-  reviewStatus text not null,
-  feedbackStatus text not null,
+  visit_date date not null,
+  review_status text not null,
+  feedback_status text not null,
   updated_at timestamptz not null default now()
 );
 
 create table if not exists campaigns (
-  id bigint primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id bigint not null,
   name text not null,
   sent integer not null default 0,
   delivered integer not null default 0,
@@ -38,12 +44,88 @@ create table if not exists campaigns (
 );
 
 create table if not exists enquiries (
-  id bigint primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id bigint not null,
   name text not null,
   status text not null,
   note text not null,
   updated_at timestamptz not null default now()
 );
+
+alter table clinic_settings add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table clinic_settings add column if not exists updated_at timestamptz not null default now();
+
+alter table reviews add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table reviews add column if not exists updated_at timestamptz not null default now();
+
+alter table patients add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table patients add column if not exists visit_date date;
+alter table patients add column if not exists review_status text;
+alter table patients add column if not exists feedback_status text;
+alter table patients add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'patients'
+      and column_name = 'visitdate'
+  ) then
+    execute '
+      update patients
+      set
+        visit_date = coalesce(visit_date, visitdate),
+        review_status = coalesce(review_status, reviewstatus),
+        feedback_status = coalesce(feedback_status, feedbackstatus)
+      where
+        (visit_date is null and visitdate is not null)
+        or (review_status is null and reviewstatus is not null)
+        or (feedback_status is null and feedbackstatus is not null)
+    ';
+  end if;
+end $$;
+
+alter table patients alter column visit_date set not null;
+alter table patients alter column review_status set not null;
+alter table patients alter column feedback_status set not null;
+
+alter table campaigns add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table campaigns add column if not exists updated_at timestamptz not null default now();
+
+alter table enquiries add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table enquiries add column if not exists updated_at timestamptz not null default now();
+
+delete from clinic_settings where user_id is null;
+delete from reviews where user_id is null;
+delete from patients where user_id is null;
+delete from campaigns where user_id is null;
+delete from enquiries where user_id is null;
+
+alter table clinic_settings alter column user_id set not null;
+alter table reviews alter column user_id set not null;
+alter table patients alter column user_id set not null;
+alter table campaigns alter column user_id set not null;
+alter table enquiries alter column user_id set not null;
+
+alter table clinic_settings drop constraint if exists clinic_settings_pkey;
+alter table reviews drop constraint if exists reviews_pkey;
+alter table patients drop constraint if exists patients_pkey;
+alter table campaigns drop constraint if exists campaigns_pkey;
+alter table enquiries drop constraint if exists enquiries_pkey;
+
+alter table clinic_settings add constraint clinic_settings_pkey primary key (user_id, id);
+alter table reviews add constraint reviews_pkey primary key (user_id, id);
+alter table patients add constraint patients_pkey primary key (user_id, id);
+alter table campaigns add constraint campaigns_pkey primary key (user_id, id);
+alter table enquiries add constraint enquiries_pkey primary key (user_id, id);
+
+create index if not exists clinic_settings_user_updated_idx on clinic_settings (user_id, updated_at desc);
+create index if not exists reviews_user_updated_idx on reviews (user_id, updated_at desc);
+create index if not exists patients_user_updated_idx on patients (user_id, updated_at desc);
+create index if not exists campaigns_user_updated_idx on campaigns (user_id, updated_at desc);
+create index if not exists enquiries_user_updated_idx on enquiries (user_id, updated_at desc);
 
 alter table clinic_settings enable row level security;
 alter table reviews enable row level security;
@@ -51,57 +133,57 @@ alter table patients enable row level security;
 alter table campaigns enable row level security;
 alter table enquiries enable row level security;
 
-drop policy if exists "public read clinic_settings" on clinic_settings;
-create policy "public read clinic_settings"
+drop policy if exists "users read own clinic_settings" on clinic_settings;
+create policy "users read own clinic_settings"
 on clinic_settings for select
-using (true);
+using (auth.uid() = user_id);
 
-drop policy if exists "public write clinic_settings" on clinic_settings;
-create policy "public write clinic_settings"
+drop policy if exists "users write own clinic_settings" on clinic_settings;
+create policy "users write own clinic_settings"
 on clinic_settings for all
-using (true)
-with check (true);
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
-drop policy if exists "public read reviews" on reviews;
-create policy "public read reviews"
+drop policy if exists "users read own reviews" on reviews;
+create policy "users read own reviews"
 on reviews for select
-using (true);
+using (auth.uid() = user_id);
 
-drop policy if exists "public write reviews" on reviews;
-create policy "public write reviews"
+drop policy if exists "users write own reviews" on reviews;
+create policy "users write own reviews"
 on reviews for all
-using (true)
-with check (true);
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
-drop policy if exists "public read patients" on patients;
-create policy "public read patients"
+drop policy if exists "users read own patients" on patients;
+create policy "users read own patients"
 on patients for select
-using (true);
+using (auth.uid() = user_id);
 
-drop policy if exists "public write patients" on patients;
-create policy "public write patients"
+drop policy if exists "users write own patients" on patients;
+create policy "users write own patients"
 on patients for all
-using (true)
-with check (true);
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
-drop policy if exists "public read campaigns" on campaigns;
-create policy "public read campaigns"
+drop policy if exists "users read own campaigns" on campaigns;
+create policy "users read own campaigns"
 on campaigns for select
-using (true);
+using (auth.uid() = user_id);
 
-drop policy if exists "public write campaigns" on campaigns;
-create policy "public write campaigns"
+drop policy if exists "users write own campaigns" on campaigns;
+create policy "users write own campaigns"
 on campaigns for all
-using (true)
-with check (true);
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
-drop policy if exists "public read enquiries" on enquiries;
-create policy "public read enquiries"
+drop policy if exists "users read own enquiries" on enquiries;
+create policy "users read own enquiries"
 on enquiries for select
-using (true);
+using (auth.uid() = user_id);
 
-drop policy if exists "public write enquiries" on enquiries;
-create policy "public write enquiries"
+drop policy if exists "users write own enquiries" on enquiries;
+create policy "users write own enquiries"
 on enquiries for all
-using (true)
-with check (true);
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
