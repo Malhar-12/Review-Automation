@@ -59,9 +59,6 @@ alter table reviews add column if not exists user_id uuid references auth.users 
 alter table reviews add column if not exists updated_at timestamptz not null default now();
 
 alter table patients add column if not exists user_id uuid references auth.users (id) on delete cascade;
-alter table patients add column if not exists visit_date date;
-alter table patients add column if not exists review_status text;
-alter table patients add column if not exists feedback_status text;
 alter table patients add column if not exists updated_at timestamptz not null default now();
 
 do $$
@@ -73,19 +70,57 @@ begin
       and table_name = 'patients'
       and column_name = 'visitdate'
   ) then
-    execute '
-      update patients
-      set
-        visit_date = coalesce(visit_date, visitdate),
-        review_status = coalesce(review_status, reviewstatus),
-        feedback_status = coalesce(feedback_status, feedbackstatus)
-      where
-        (visit_date is null and visitdate is not null)
-        or (review_status is null and reviewstatus is not null)
-        or (feedback_status is null and feedbackstatus is not null)
-    ';
+    if not exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'patients'
+        and column_name = 'visit_date'
+    ) then
+      execute 'alter table patients rename column visitdate to visit_date';
+    end if;
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'patients'
+      and column_name = 'reviewstatus'
+  ) then
+    if not exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'patients'
+        and column_name = 'review_status'
+    ) then
+      execute 'alter table patients rename column reviewstatus to review_status';
+    end if;
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'patients'
+      and column_name = 'feedbackstatus'
+  ) then
+    if not exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'patients'
+        and column_name = 'feedback_status'
+    ) then
+      execute 'alter table patients rename column feedbackstatus to feedback_status';
+    end if;
   end if;
 end $$;
+
+alter table patients add column if not exists visit_date date;
+alter table patients add column if not exists review_status text;
+alter table patients add column if not exists feedback_status text;
 
 alter table patients alter column visit_date set not null;
 alter table patients alter column review_status set not null;
