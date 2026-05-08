@@ -14,6 +14,27 @@ const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", 
 const storageKey = "skinsignal-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
+function createBlankClinic(owner = "Clinic team") {
+  return {
+    id: "default-clinic",
+    name: "",
+    city: "",
+    plan: "Launch Plan",
+    owner
+  };
+}
+
+function getOwnerFromSession(session) {
+  const email = session?.user?.email;
+
+  if (!email) {
+    return "Clinic team";
+  }
+
+  const [name] = email.split("@");
+  return name || "Clinic team";
+}
+
 function loadStoredState() {
   if (typeof window === "undefined") {
     return null;
@@ -31,13 +52,19 @@ function ensureClinicId(clinic) {
   return clinic?.id ? clinic : { ...clinic, id: "default-clinic" };
 }
 
-function normalizeRemoteState(remoteState) {
+function isClinicProfileComplete(clinic) {
+  return Boolean(clinic?.name?.trim() && clinic?.city?.trim() && clinic?.owner?.trim());
+}
+
+function normalizeRemoteState(remoteState, session) {
+  const blankClinic = createBlankClinic(getOwnerFromSession(session));
+
   return {
-    clinic: ensureClinicId(remoteState.clinic ?? clinicSeed),
-    reviews: remoteState.reviews?.length ? remoteState.reviews : initialReviews,
-    patients: remoteState.patients?.length ? remoteState.patients : initialPatients,
-    campaigns: remoteState.campaigns?.length ? remoteState.campaigns : initialCampaigns,
-    enquiries: remoteState.enquiries?.length ? remoteState.enquiries : initialEnquiries
+    clinic: ensureClinicId(remoteState.clinic ?? blankClinic),
+    reviews: remoteState.reviews ?? [],
+    patients: remoteState.patients ?? [],
+    campaigns: remoteState.campaigns ?? [],
+    enquiries: remoteState.enquiries ?? []
   };
 }
 
@@ -56,6 +83,7 @@ function App() {
   const [enquiries, setEnquiries] = useState(storedState?.enquiries ?? initialEnquiries);
   const remoteReadyRef = useRef(false);
   const hasLoadedRemoteRef = useRef(false);
+  const clinicIsComplete = isClinicProfileComplete(clinic);
 
   useEffect(() => {
     if (!hasSupabaseEnv || !supabase) {
@@ -111,15 +139,19 @@ function App() {
       hasLoadedRemoteRef.current = true;
 
       if (result.available && result.state) {
-        const nextState = normalizeRemoteState(result.state);
+        const nextState = normalizeRemoteState(result.state, session);
         setClinic(nextState.clinic);
         setReviews(nextState.reviews);
         setPatients(nextState.patients);
         setCampaigns(nextState.campaigns);
         setEnquiries(nextState.enquiries);
-        setSyncStatus("supabase");
+        setSyncStatus(isClinicProfileComplete(nextState.clinic) ? "supabase" : "setup");
         remoteReadyRef.current = true;
-        setNotice("Connected to Supabase. Changes now sync to your project tables.");
+        setNotice(
+          isClinicProfileComplete(nextState.clinic)
+            ? "Connected to Supabase. Changes now sync to your project tables."
+            : "Connected to Supabase. Finish clinic setup to start your private cloud workspace."
+        );
         return;
       }
 
@@ -153,6 +185,11 @@ function App() {
       return undefined;
     }
 
+    if (hasSupabaseEnv && session && !clinicIsComplete) {
+      setSyncStatus("setup");
+      return undefined;
+    }
+
     let cancelled = false;
 
     async function syncState() {
@@ -183,7 +220,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [campaigns, clinic, enquiries, patients, reviews, session]);
+  }, [campaigns, clinic, clinicIsComplete, enquiries, patients, reviews, session]);
 
   const stats = useMemo(() => {
     const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
@@ -296,7 +333,11 @@ function App() {
 
   function saveClinic(updates) {
     setClinic((currentClinic) => ({ ...currentClinic, ...updates }));
-    setNotice("Clinic settings saved.");
+    setNotice(
+      isClinicProfileComplete(updates)
+        ? "Clinic settings saved."
+        : "Clinic profile saved locally. Add the remaining details to unlock cloud sync."
+    );
   }
 
   async function handleLogout() {
@@ -356,10 +397,17 @@ function App() {
 
         <div className="sidebar-card">
           <p className="sidebar-label">Clinic</p>
-          <h3>{clinic.name}</h3>
-          <p>{clinic.city}</p>
+          <h3>{clinic.name || "Set up your clinic"}</h3>
+          <p>{clinic.city || "Complete onboarding in Settings"}</p>
           <span className="status-pill">{clinic.plan}</span>
-          <p className="sidebar-sync">Sync: {syncStatus === "supabase" ? "Supabase live" : "Local only"}</p>
+          <p className="sidebar-sync">
+            Sync:{" "}
+            {syncStatus === "supabase"
+              ? "Supabase live"
+              : syncStatus === "setup"
+                ? "Setup required"
+                : "Local only"}
+          </p>
         </div>
       </aside>
 
@@ -367,7 +415,7 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">{activeView}</p>
-            <h1>Good afternoon, {clinic.owner}</h1>
+            <h1>Good afternoon, {clinic.owner || "Clinic team"}</h1>
             <p className="muted">Here&apos;s what needs your attention today.</p>
           </div>
           <div className="topbar-actions">
@@ -393,6 +441,7 @@ function App() {
         {activeView === "Dashboard" && (
           <DashboardView
             campaigns={campaigns}
+            clinicIsComplete={clinicIsComplete}
             enquiries={enquiries}
             feedbackItems={feedbackItems}
             reviews={reviews}
@@ -516,6 +565,7 @@ function AuthScreen({ authError, setAuthError }) {
 
 function DashboardView({
   campaigns,
+  clinicIsComplete,
   enquiries,
   feedbackItems,
   reviews,
@@ -525,6 +575,19 @@ function DashboardView({
 }) {
   return (
     <>
+      {!clinicIsComplete ? (
+        <section className="panel onboarding-panel">
+          <p className="eyebrow">Get Started</p>
+          <h2>Finish your clinic profile</h2>
+          <p className="muted">
+            Add your clinic name, city, and owner in Settings to activate private Supabase sync for this account.
+          </p>
+          <button className="primary-button small" onClick={() => setActiveView("Settings")} type="button">
+            Complete setup
+          </button>
+        </section>
+      ) : null}
+
       <section className="stats-grid">
         {stats.map((stat) => (
           <article key={stat.label} className={`stat-card ${stat.accent ? "accent" : ""}`}>
