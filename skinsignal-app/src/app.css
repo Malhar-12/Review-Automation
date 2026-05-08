@@ -369,6 +369,11 @@ textarea {
   margin-top: 24px;
 }
 
+.onboarding-panel {
+  margin-top: 24px;
+  background: linear-gradient(135deg, rgba(242, 186, 106, 0.18), rgba(197, 95, 118, 0.1));
+}
+
 .panel-large {
   padding-bottom: 10px;
 }
