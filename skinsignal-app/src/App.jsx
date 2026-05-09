@@ -56,6 +56,26 @@ function isClinicProfileComplete(clinic) {
   return Boolean(clinic?.name?.trim() && clinic?.city?.trim() && clinic?.owner?.trim());
 }
 
+function buildReplyDraft(review, clinic) {
+  const reviewText = review.text.toLowerCase();
+  const ownerName = clinic?.owner?.trim() || "our clinic team";
+  const clinicName = clinic?.name?.trim() || "our clinic";
+  const mentionsWait = reviewText.includes("wait");
+  const mentionsStaff = reviewText.includes("staff") || reviewText.includes("team");
+  const mentionsClarity =
+    reviewText.includes("clarity") || reviewText.includes("explain") || reviewText.includes("follow-up");
+
+  if (review.rating >= 5) {
+    return `Thank you for the wonderful review, ${review.name}. ${clinicName} is grateful for your trust, and ${ownerName} is glad the visit felt supportive. We look forward to seeing you again.`;
+  }
+
+  if (review.rating === 4) {
+    return `Thank you for the thoughtful feedback, ${review.name}. ${ownerName} appreciates your kind words about the experience.${mentionsWait ? " We are also reviewing wait times so visits feel smoother." : ""} ${mentionsStaff ? "I will pass your note along to the team." : ""}`.trim();
+  }
+
+  return `Thank you for sharing this with us, ${review.name}. ${ownerName} appreciates the honest feedback and wants to make things right.${mentionsClarity ? " We will improve how we explain next steps and follow-up care." : ""}${mentionsWait ? " We are also reviewing scheduling and waiting time closely." : ""} Please feel free to contact ${clinicName} directly so we can help further.`;
+}
+
 function normalizeRemoteState(remoteState, session) {
   const blankClinic = createBlankClinic(getOwnerFromSession(session));
 
@@ -84,6 +104,31 @@ function App() {
   const remoteReadyRef = useRef(false);
   const hasLoadedRemoteRef = useRef(false);
   const clinicIsComplete = isClinicProfileComplete(clinic);
+  const automationStats = useMemo(
+    () => [
+      {
+        label: "Reply drafts ready",
+        value: reviews.filter((review) => review.status === "ready").length,
+        detail: `${reviews.filter((review) => review.status === "needs_edit").length} still need edits`
+      },
+      {
+        label: "Requests waiting",
+        value: patients.filter((patient) => patient.reviewStatus === "pending").length,
+        detail: `${patients.filter((patient) => patient.reviewStatus === "sent").length} already queued`
+      },
+      {
+        label: "Active campaigns",
+        value: campaigns.filter((campaign) => campaign.status === "active").length,
+        detail: `${campaigns.length} total campaign flows`
+      },
+      {
+        label: "Follow-ups due",
+        value: enquiries.filter((entry) => entry.status === "awaiting_reply").length,
+        detail: `${enquiries.filter((entry) => entry.status === "booked").length} already booked`
+      }
+    ],
+    [campaigns, enquiries, patients, reviews]
+  );
 
   useEffect(() => {
     if (!hasSupabaseEnv || !supabase) {
@@ -285,12 +330,43 @@ function App() {
       })
     );
 
+    if (sentCount) {
+      const campaignDate = new Date().toISOString().slice(0, 10);
+
+      setCampaigns((currentCampaigns) => [
+        {
+          id: Date.now(),
+          name: `Automated review batch ${campaignDate}`,
+          sent: sentCount,
+          delivered: 0,
+          clicked: 0,
+          status: "active"
+        },
+        ...currentCampaigns
+      ]);
+    }
+
     setNotice(
       sentCount
-        ? `Queued review requests for ${sentCount} patient${sentCount > 1 ? "s" : ""}.`
+        ? `Queued review requests for ${sentCount} patient${sentCount > 1 ? "s" : ""} and created a tracking campaign.`
         : "All tracked patients already have a review action."
     );
     setActiveView("Patients");
+  }
+
+  function regenerateDraft(reviewId) {
+    setReviews((currentReviews) =>
+      currentReviews.map((review) =>
+        review.id === reviewId
+          ? {
+              ...review,
+              draft: buildReplyDraft(review, clinic),
+              status: review.status === "approved" ? "approved" : "ready"
+            }
+          : review
+      )
+    );
+    setNotice("Generated a fresh reply draft from the review context.");
   }
 
   function exportReport() {
@@ -440,17 +516,21 @@ function App() {
 
         {activeView === "Dashboard" && (
           <DashboardView
+            automationStats={automationStats}
             campaigns={campaigns}
             clinicIsComplete={clinicIsComplete}
             enquiries={enquiries}
             feedbackItems={feedbackItems}
             reviews={reviews}
+            regenerateDraft={regenerateDraft}
             setActiveView={setActiveView}
             stats={stats}
             updateReview={updateReview}
           />
         )}
-        {activeView === "Reviews" && <ReviewsView reviews={reviews} updateReview={updateReview} />}
+        {activeView === "Reviews" && (
+          <ReviewsView regenerateDraft={regenerateDraft} reviews={reviews} updateReview={updateReview} />
+        )}
         {activeView === "Patients" && (
           <PatientsView addPatient={addPatient} patients={patients} setPatients={setPatients} />
         )}
@@ -564,10 +644,12 @@ function AuthScreen({ authError, setAuthError }) {
 }
 
 function DashboardView({
+  automationStats,
   campaigns,
   clinicIsComplete,
   enquiries,
   feedbackItems,
+  regenerateDraft,
   reviews,
   setActiveView,
   stats,
@@ -616,6 +698,24 @@ function DashboardView({
         </div>
 
         <div className="stack">
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <p className="eyebrow">Automation</p>
+                <h2>Automation center</h2>
+              </div>
+            </div>
+            <div className="automation-grid">
+              {automationStats.map((item) => (
+                <article key={item.label} className="automation-tile">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <small>{item.detail}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="panel">
             <div className="panel-head">
               <div>
@@ -668,7 +768,7 @@ function DashboardView({
   );
 }
 
-function ReviewsView({ reviews, updateReview }) {
+function ReviewsView({ regenerateDraft, reviews, updateReview }) {
   const [filter, setFilter] = useState("all");
 
   const filteredReviews = reviews.filter((review) => {
@@ -700,7 +800,12 @@ function ReviewsView({ reviews, updateReview }) {
         </div>
       </div>
       {filteredReviews.map((review) => (
-        <ReviewRow key={review.id} review={review} updateReview={updateReview} />
+        <ReviewRow
+          key={review.id}
+          regenerateDraft={regenerateDraft}
+          review={review}
+          updateReview={updateReview}
+        />
       ))}
     </section>
   );
@@ -1106,7 +1211,7 @@ function SettingsView({ clinic, saveClinic }) {
   );
 }
 
-function ReviewRow({ review, updateReview }) {
+function ReviewRow({ regenerateDraft, review, updateReview }) {
   return (
     <div className="review-row">
       <div className="review-meta">
@@ -1133,6 +1238,13 @@ function ReviewRow({ review, updateReview }) {
         </div>
       </div>
       <div className="review-actions">
+        <button
+          className="ghost-button small"
+          onClick={() => regenerateDraft(review.id)}
+          type="button"
+        >
+          Regenerate draft
+        </button>
         <button
           className="ghost-button small"
           onClick={() =>

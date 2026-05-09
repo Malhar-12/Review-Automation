@@ -455,7 +455,8 @@ textarea {
 
 .mini-metrics,
 .campaign-grid,
-.settings-grid {
+.settings-grid,
+.automation-grid {
   display: grid;
   gap: 14px;
 }
@@ -466,7 +467,8 @@ textarea {
 
 .mini-metrics div,
 .campaign-card,
-.settings-card {
+.settings-card,
+.automation-tile {
   padding: 16px;
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.84);
@@ -482,6 +484,22 @@ textarea {
 .mini-metrics span,
 .campaign-metrics span {
   color: var(--muted);
+}
+
+.automation-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.automation-tile span,
+.automation-tile small {
+  display: block;
+  color: var(--muted);
+}
+
+.automation-tile strong {
+  display: block;
+  font-size: 1.8rem;
+  margin: 8px 0 6px;
 }
 
 .simple-list {
