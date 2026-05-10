@@ -5,7 +5,8 @@ const tableNames = [
   "reviews",
   "patients",
   "campaigns",
-  "enquiries"
+  "enquiries",
+  "automation_tasks"
 ];
 
 function sortDescending(items) {
@@ -44,7 +45,10 @@ function mapPatientFromRow(row) {
     name: row.name,
     visitDate: row.visit_date,
     reviewStatus: row.review_status,
-    feedbackStatus: row.feedback_status
+    feedbackStatus: row.feedback_status,
+    phone: row.phone ?? "",
+    email: row.email ?? "",
+    nextFollowUp: row.next_follow_up ?? ""
   };
 }
 
@@ -64,7 +68,23 @@ function mapEnquiryFromRow(row) {
     id: row.id,
     name: row.name,
     status: row.status,
-    note: row.note
+    note: row.note,
+    phone: row.phone ?? "",
+    preferredChannel: row.preferred_channel ?? "whatsapp",
+    nextFollowUp: row.next_follow_up ?? ""
+  };
+}
+
+function mapAutomationTaskFromRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    contactName: row.contact_name,
+    channel: row.channel,
+    dueAt: row.due_at,
+    status: row.status,
+    source: row.source,
+    message: row.message
   };
 }
 
@@ -102,6 +122,9 @@ function mapPatientToRow(patient, userId) {
     visit_date: patient.visitDate,
     review_status: patient.reviewStatus,
     feedback_status: patient.feedbackStatus,
+    phone: patient.phone ?? "",
+    email: patient.email ?? "",
+    next_follow_up: patient.nextFollowUp || null,
     updated_at: new Date().toISOString()
   };
 }
@@ -126,6 +149,24 @@ function mapEnquiryToRow(enquiry, userId) {
     name: enquiry.name,
     status: enquiry.status,
     note: enquiry.note,
+    phone: enquiry.phone ?? "",
+    preferred_channel: enquiry.preferredChannel ?? "whatsapp",
+    next_follow_up: enquiry.nextFollowUp || null,
+    updated_at: new Date().toISOString()
+  };
+}
+
+function mapAutomationTaskToRow(task, userId) {
+  return {
+    user_id: userId,
+    id: task.id,
+    title: task.title,
+    contact_name: task.contactName,
+    channel: task.channel,
+    due_at: task.dueAt,
+    status: task.status,
+    source: task.source,
+    message: task.message,
     updated_at: new Date().toISOString()
   };
 }
@@ -146,7 +187,7 @@ export async function loadRemoteState(userId) {
   }
 
   try {
-    const [clinicResult, reviewsResult, patientsResult, campaignsResult, enquiriesResult] =
+    const [clinicResult, reviewsResult, patientsResult, campaignsResult, enquiriesResult, automationTasksResult] =
       await Promise.all([
         supabase
           .from("clinic_settings")
@@ -157,7 +198,8 @@ export async function loadRemoteState(userId) {
         supabase.from("reviews").select("*").eq("user_id", userId).order("id", { ascending: false }),
         supabase.from("patients").select("*").eq("user_id", userId).order("id", { ascending: false }),
         supabase.from("campaigns").select("*").eq("user_id", userId).order("id", { ascending: false }),
-        supabase.from("enquiries").select("*").eq("user_id", userId).order("id", { ascending: false })
+        supabase.from("enquiries").select("*").eq("user_id", userId).order("id", { ascending: false }),
+        supabase.from("automation_tasks").select("*").eq("user_id", userId).order("id", { ascending: false })
       ]);
 
     const firstError = [
@@ -165,7 +207,8 @@ export async function loadRemoteState(userId) {
       reviewsResult.error,
       patientsResult.error,
       campaignsResult.error,
-      enquiriesResult.error
+      enquiriesResult.error,
+      automationTasksResult.error
     ].find(Boolean);
 
     if (firstError) {
@@ -179,7 +222,8 @@ export async function loadRemoteState(userId) {
         reviews: (reviewsResult.data ?? []).map(mapReviewFromRow),
         patients: (patientsResult.data ?? []).map(mapPatientFromRow),
         campaigns: (campaignsResult.data ?? []).map(mapCampaignFromRow),
-        enquiries: (enquiriesResult.data ?? []).map(mapEnquiryFromRow)
+        enquiries: (enquiriesResult.data ?? []).map(mapEnquiryFromRow),
+        automationTasks: (automationTasksResult.data ?? []).map(mapAutomationTaskFromRow)
       }
     };
   } catch (error) {
@@ -190,7 +234,15 @@ export async function loadRemoteState(userId) {
   }
 }
 
-export async function pushRemoteState({ clinic, reviews, patients, campaigns, enquiries, userId }) {
+export async function pushRemoteState({
+  clinic,
+  reviews,
+  patients,
+  campaigns,
+  enquiries,
+  automationTasks,
+  userId
+}) {
   if (!hasSupabaseEnv || !supabase) {
     return { ok: false, reason: "Supabase environment variables are missing." };
   }
@@ -220,6 +272,11 @@ export async function pushRemoteState({ clinic, reviews, patients, campaigns, en
       supabase
         .from("enquiries")
         .upsert(sortDescending(enquiries).map((enquiry) => mapEnquiryToRow(enquiry, userId)), {
+          onConflict: "user_id,id"
+        }),
+      supabase
+        .from("automation_tasks")
+        .upsert(sortDescending(automationTasks).map((task) => mapAutomationTaskToRow(task, userId)), {
           onConflict: "user_id,id"
         })
     ];

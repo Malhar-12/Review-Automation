@@ -46,10 +46,46 @@ export const reviews = [
 ];
 
 export const patients = [
-  { id: 1, name: "Priya N.", visitDate: "2026-04-19", reviewStatus: "sent", feedbackStatus: "happy" },
-  { id: 2, name: "Karan D.", visitDate: "2026-04-20", reviewStatus: "clicked", feedbackStatus: "happy" },
-  { id: 3, name: "Ishita R.", visitDate: "2026-04-20", reviewStatus: "pending", feedbackStatus: "unknown" },
-  { id: 4, name: "Neha G.", visitDate: "2026-04-21", reviewStatus: "private_feedback", feedbackStatus: "needs_followup" }
+  {
+    id: 1,
+    name: "Priya N.",
+    visitDate: "2026-04-19",
+    reviewStatus: "sent",
+    feedbackStatus: "happy",
+    phone: "+91 98765 11001",
+    email: "priya@example.com",
+    nextFollowUp: "2026-05-11"
+  },
+  {
+    id: 2,
+    name: "Karan D.",
+    visitDate: "2026-04-20",
+    reviewStatus: "clicked",
+    feedbackStatus: "happy",
+    phone: "+91 98765 11002",
+    email: "karan@example.com",
+    nextFollowUp: "2026-05-12"
+  },
+  {
+    id: 3,
+    name: "Ishita R.",
+    visitDate: "2026-04-20",
+    reviewStatus: "pending",
+    feedbackStatus: "unknown",
+    phone: "+91 98765 11003",
+    email: "ishita@example.com",
+    nextFollowUp: "2026-05-10"
+  },
+  {
+    id: 4,
+    name: "Neha G.",
+    visitDate: "2026-04-21",
+    reviewStatus: "private_feedback",
+    feedbackStatus: "needs_followup",
+    phone: "+91 98765 11004",
+    email: "neha@example.com",
+    nextFollowUp: "2026-05-09"
+  }
 ];
 
 export const campaigns = [
@@ -58,9 +94,66 @@ export const campaigns = [
 ];
 
 export const enquiries = [
-  { id: 1, name: "Laser consultation", status: "follow_up_sent", note: "Follow-up sent 10 min ago" },
-  { id: 2, name: "Acne treatment pricing", status: "awaiting_reply", note: "Awaiting patient reply" },
-  { id: 3, name: "Skin allergy consultation", status: "booked", note: "Booked for Friday" }
+  {
+    id: 1,
+    name: "Laser consultation",
+    status: "follow_up_sent",
+    note: "Follow-up sent 10 min ago",
+    phone: "+91 99880 44001",
+    preferredChannel: "whatsapp",
+    nextFollowUp: "2026-05-10"
+  },
+  {
+    id: 2,
+    name: "Acne treatment pricing",
+    status: "awaiting_reply",
+    note: "Awaiting patient reply",
+    phone: "+91 99880 44002",
+    preferredChannel: "sms",
+    nextFollowUp: "2026-05-11"
+  },
+  {
+    id: 3,
+    name: "Skin allergy consultation",
+    status: "booked",
+    note: "Booked for Friday",
+    phone: "+91 99880 44003",
+    preferredChannel: "email",
+    nextFollowUp: "2026-05-13"
+  }
+];
+
+export const automationTasks = [
+  {
+    id: 1,
+    title: "Review reminder",
+    contactName: "Ishita R.",
+    channel: "whatsapp",
+    dueAt: "2026-05-10 10:30",
+    status: "scheduled",
+    source: "patient",
+    message: "Send a second reminder if no review is posted today."
+  },
+  {
+    id: 2,
+    title: "Lead follow-up",
+    contactName: "Acne treatment pricing",
+    channel: "sms",
+    dueAt: "2026-05-11 14:00",
+    status: "scheduled",
+    source: "enquiry",
+    message: "Share pricing deck and ask for preferred consultation slot."
+  },
+  {
+    id: 3,
+    title: "Private feedback callback",
+    contactName: "Neha G.",
+    channel: "phone",
+    dueAt: "2026-05-09 17:30",
+    status: "done",
+    source: "patient",
+    message: "Call patient and close the loop on follow-up support."
+  }
 ];
 
 export const feedbackItems = [

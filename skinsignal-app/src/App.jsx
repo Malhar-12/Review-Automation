@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  automationTasks as initialAutomationTasks,
   campaigns as initialCampaigns,
   clinic as initialClinic,
   enquiries as initialEnquiries,
@@ -10,7 +11,7 @@ import {
 import { hasSupabaseEnv, supabase } from "./supabase";
 import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
-const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Settings"];
+const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Automations", "Settings"];
 const storageKey = "skinsignal-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
@@ -76,6 +77,19 @@ function buildReplyDraft(review, clinic) {
   return `Thank you for sharing this with us, ${review.name}. ${ownerName} appreciates the honest feedback and wants to make things right.${mentionsClarity ? " We will improve how we explain next steps and follow-up care." : ""}${mentionsWait ? " We are also reviewing scheduling and waiting time closely." : ""} Please feel free to contact ${clinicName} directly so we can help further.`;
 }
 
+function buildAutomationTask({ title, contactName, channel, dueAt, source, message }) {
+  return {
+    id: Date.now() + Math.floor(Math.random() * 1000),
+    title,
+    contactName,
+    channel,
+    dueAt,
+    status: "scheduled",
+    source,
+    message
+  };
+}
+
 function normalizeRemoteState(remoteState, session) {
   const blankClinic = createBlankClinic(getOwnerFromSession(session));
 
@@ -84,7 +98,8 @@ function normalizeRemoteState(remoteState, session) {
     reviews: remoteState.reviews ?? [],
     patients: remoteState.patients ?? [],
     campaigns: remoteState.campaigns ?? [],
-    enquiries: remoteState.enquiries ?? []
+    enquiries: remoteState.enquiries ?? [],
+    automationTasks: remoteState.automationTasks ?? []
   };
 }
 
@@ -101,6 +116,9 @@ function App() {
   const [patients, setPatients] = useState(storedState?.patients ?? initialPatients);
   const [campaigns, setCampaigns] = useState(storedState?.campaigns ?? initialCampaigns);
   const [enquiries, setEnquiries] = useState(storedState?.enquiries ?? initialEnquiries);
+  const [automationTasks, setAutomationTasks] = useState(
+    storedState?.automationTasks ?? initialAutomationTasks
+  );
   const remoteReadyRef = useRef(false);
   const hasLoadedRemoteRef = useRef(false);
   const clinicIsComplete = isClinicProfileComplete(clinic);
@@ -123,11 +141,11 @@ function App() {
       },
       {
         label: "Follow-ups due",
-        value: enquiries.filter((entry) => entry.status === "awaiting_reply").length,
+        value: automationTasks.filter((task) => task.status === "scheduled").length,
         detail: `${enquiries.filter((entry) => entry.status === "booked").length} already booked`
       }
     ],
-    [campaigns, enquiries, patients, reviews]
+    [automationTasks, campaigns, enquiries, patients, reviews]
   );
 
   useEffect(() => {
@@ -190,6 +208,7 @@ function App() {
         setPatients(nextState.patients);
         setCampaigns(nextState.campaigns);
         setEnquiries(nextState.enquiries);
+        setAutomationTasks(nextState.automationTasks);
         setSyncStatus(isClinicProfileComplete(nextState.clinic) ? "supabase" : "setup");
         remoteReadyRef.current = true;
         setNotice(
@@ -220,10 +239,11 @@ function App() {
         reviews,
         patients,
         campaigns,
-        enquiries
+        enquiries,
+        automationTasks
       })
     );
-  }, [campaigns, clinic, enquiries, patients, reviews]);
+  }, [automationTasks, campaigns, clinic, enquiries, patients, reviews]);
 
   useEffect(() => {
     if (!hasLoadedRemoteRef.current || !remoteReadyRef.current) {
@@ -244,6 +264,7 @@ function App() {
         patients,
         campaigns,
         enquiries,
+        automationTasks,
         userId: session?.user?.id
       });
 
@@ -265,7 +286,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [campaigns, clinic, clinicIsComplete, enquiries, patients, reviews, session]);
+  }, [automationTasks, campaigns, clinic, clinicIsComplete, enquiries, patients, reviews, session]);
 
   const stats = useMemo(() => {
     const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
@@ -318,11 +339,22 @@ function App() {
 
   function queueReviewRequests() {
     let sentCount = 0;
+    const createdTasks = [];
 
     setPatients((currentPatients) =>
       currentPatients.map((patient) => {
         if (patient.reviewStatus === "pending") {
           sentCount += 1;
+          createdTasks.push(
+            buildAutomationTask({
+              title: "Review reminder",
+              contactName: patient.name,
+              channel: patient.phone ? "whatsapp" : patient.email ? "email" : "manual",
+              dueAt: `${patient.nextFollowUp || patient.visitDate} 18:00`,
+              source: "patient",
+              message: "Send a reminder if the patient has not opened the review link."
+            })
+          );
           return { ...patient, reviewStatus: "sent" };
         }
 
@@ -344,6 +376,8 @@ function App() {
         },
         ...currentCampaigns
       ]);
+
+      setAutomationTasks((currentTasks) => [...createdTasks, ...currentTasks]);
     }
 
     setNotice(
@@ -377,7 +411,8 @@ function App() {
       reviews,
       patients,
       campaigns,
-      enquiries
+      enquiries,
+      automationTasks
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -394,6 +429,17 @@ function App() {
 
   function addPatient(patient) {
     setPatients((currentPatients) => [{ id: Date.now(), ...patient }, ...currentPatients]);
+    setAutomationTasks((currentTasks) => [
+      buildAutomationTask({
+        title: "First review request",
+        contactName: patient.name,
+        channel: patient.phone ? "whatsapp" : patient.email ? "email" : "manual",
+        dueAt: `${patient.nextFollowUp || patient.visitDate} 11:00`,
+        source: "patient",
+        message: "Send the first review request after the visit."
+      }),
+      ...currentTasks
+    ]);
     setNotice(`Added ${patient.name} to the review request list.`);
   }
 
@@ -404,7 +450,67 @@ function App() {
 
   function addEnquiry(enquiry) {
     setEnquiries((currentEnquiries) => [{ id: Date.now(), ...enquiry }, ...currentEnquiries]);
+    setAutomationTasks((currentTasks) => [
+      buildAutomationTask({
+        title: "Lead follow-up",
+        contactName: enquiry.name,
+        channel: enquiry.preferredChannel || "whatsapp",
+        dueAt: `${enquiry.nextFollowUp || new Date().toISOString().slice(0, 10)} 15:00`,
+        source: "enquiry",
+        message: enquiry.note || "Send the next follow-up to this lead."
+      }),
+      ...currentTasks
+    ]);
     setNotice(`Added ${enquiry.name} to the lead tracker.`);
+  }
+
+  function schedulePatientFollowUp(patientId) {
+    const patient = patients.find((entry) => entry.id === patientId);
+
+    if (!patient) {
+      return;
+    }
+
+    setAutomationTasks((currentTasks) => [
+      buildAutomationTask({
+        title: "Manual patient follow-up",
+        contactName: patient.name,
+        channel: patient.phone ? "whatsapp" : patient.email ? "email" : "manual",
+        dueAt: `${patient.nextFollowUp || patient.visitDate} 16:00`,
+        source: "patient",
+        message: "Check whether this patient needs another reminder."
+      }),
+      ...currentTasks
+    ]);
+    setNotice(`Scheduled a follow-up for ${patient.name}.`);
+  }
+
+  function scheduleEnquiryFollowUp(enquiryId) {
+    const enquiry = enquiries.find((entry) => entry.id === enquiryId);
+
+    if (!enquiry) {
+      return;
+    }
+
+    setAutomationTasks((currentTasks) => [
+      buildAutomationTask({
+        title: "Lead reminder",
+        contactName: enquiry.name,
+        channel: enquiry.preferredChannel || "whatsapp",
+        dueAt: `${enquiry.nextFollowUp || new Date().toISOString().slice(0, 10)} 13:00`,
+        source: "enquiry",
+        message: enquiry.note || "Send a follow-up message to this enquiry."
+      }),
+      ...currentTasks
+    ]);
+    setNotice(`Scheduled a follow-up for ${enquiry.name}.`);
+  }
+
+  function completeAutomationTask(taskId) {
+    setAutomationTasks((currentTasks) =>
+      currentTasks.map((task) => (task.id === taskId ? { ...task, status: "done" } : task))
+    );
+    setNotice("Automation task marked complete.");
   }
 
   function saveClinic(updates) {
@@ -517,6 +623,7 @@ function App() {
         {activeView === "Dashboard" && (
           <DashboardView
             automationStats={automationStats}
+            automationTasks={automationTasks}
             campaigns={campaigns}
             clinicIsComplete={clinicIsComplete}
             enquiries={enquiries}
@@ -532,13 +639,29 @@ function App() {
           <ReviewsView regenerateDraft={regenerateDraft} reviews={reviews} updateReview={updateReview} />
         )}
         {activeView === "Patients" && (
-          <PatientsView addPatient={addPatient} patients={patients} setPatients={setPatients} />
+          <PatientsView
+            addPatient={addPatient}
+            patients={patients}
+            schedulePatientFollowUp={schedulePatientFollowUp}
+            setPatients={setPatients}
+          />
         )}
         {activeView === "Campaigns" && (
           <CampaignsView addCampaign={addCampaign} campaigns={campaigns} />
         )}
         {activeView === "Enquiries" && (
-          <EnquiriesView addEnquiry={addEnquiry} enquiries={enquiries} setEnquiries={setEnquiries} />
+          <EnquiriesView
+            addEnquiry={addEnquiry}
+            enquiries={enquiries}
+            scheduleEnquiryFollowUp={scheduleEnquiryFollowUp}
+            setEnquiries={setEnquiries}
+          />
+        )}
+        {activeView === "Automations" && (
+          <AutomationsView
+            automationTasks={automationTasks}
+            completeAutomationTask={completeAutomationTask}
+          />
         )}
         {activeView === "Settings" && <SettingsView clinic={clinic} saveClinic={saveClinic} />}
       </main>
@@ -645,6 +768,7 @@ function AuthScreen({ authError, setAuthError }) {
 
 function DashboardView({
   automationStats,
+  automationTasks,
   campaigns,
   clinicIsComplete,
   enquiries,
@@ -714,6 +838,14 @@ function DashboardView({
                 </article>
               ))}
             </div>
+            <SimpleList
+              items={automationTasks.slice(0, 2)}
+              titleKey="title"
+              detailKey="dueAt"
+            />
+            <button className="link-button" onClick={() => setActiveView("Automations")} type="button">
+              View tasks
+            </button>
           </section>
 
           <section className="panel">
@@ -811,12 +943,15 @@ function ReviewsView({ regenerateDraft, reviews, updateReview }) {
   );
 }
 
-function PatientsView({ addPatient, patients, setPatients }) {
+function PatientsView({ addPatient, patients, schedulePatientFollowUp, setPatients }) {
   const [form, setForm] = useState({
     name: "",
     visitDate: new Date().toISOString().slice(0, 10),
     reviewStatus: "pending",
-    feedbackStatus: "unknown"
+    feedbackStatus: "unknown",
+    phone: "",
+    email: "",
+    nextFollowUp: new Date().toISOString().slice(0, 10)
   });
 
   function handleSubmit(event) {
@@ -833,7 +968,9 @@ function PatientsView({ addPatient, patients, setPatients }) {
 
     setForm((currentForm) => ({
       ...currentForm,
-      name: ""
+      name: "",
+      phone: "",
+      email: ""
     }));
   }
 
@@ -888,6 +1025,23 @@ function PatientsView({ addPatient, patients, setPatients }) {
           <option value="happy">happy</option>
           <option value="needs_followup">needs_followup</option>
         </select>
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, phone: event.target.value }))}
+          placeholder="Phone"
+          value={form.phone}
+        />
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, email: event.target.value }))}
+          placeholder="Email"
+          value={form.email}
+        />
+        <input
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, nextFollowUp: event.target.value }))
+          }
+          type="date"
+          value={form.nextFollowUp}
+        />
         <button className="primary-button small" type="submit">
           Add patient
         </button>
@@ -901,6 +1055,8 @@ function PatientsView({ addPatient, patients, setPatients }) {
               <th>Visit Date</th>
               <th>Review Status</th>
               <th>Feedback Status</th>
+              <th>Contact</th>
+              <th>Next Follow-up</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -911,7 +1067,16 @@ function PatientsView({ addPatient, patients, setPatients }) {
                 <td>{patient.visitDate}</td>
                 <td><span className="chip">{patient.reviewStatus}</span></td>
                 <td><span className="chip chip-soft">{patient.feedbackStatus}</span></td>
+                <td>{patient.phone || patient.email || "Missing"}</td>
+                <td>{patient.nextFollowUp || "-"}</td>
                 <td>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => schedulePatientFollowUp(patient.id)}
+                    type="button"
+                  >
+                    Follow-up
+                  </button>
                   <button
                     className="ghost-button small"
                     disabled={patient.reviewStatus === "sent"}
@@ -1043,11 +1208,14 @@ function CampaignsView({ addCampaign, campaigns }) {
   );
 }
 
-function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
+function EnquiriesView({ addEnquiry, enquiries, scheduleEnquiryFollowUp, setEnquiries }) {
   const [form, setForm] = useState({
     name: "",
     status: "awaiting_reply",
-    note: ""
+    note: "",
+    phone: "",
+    preferredChannel: "whatsapp",
+    nextFollowUp: new Date().toISOString().slice(0, 10)
   });
 
   function handleSubmit(event) {
@@ -1066,7 +1234,10 @@ function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
     setForm({
       name: "",
       status: "awaiting_reply",
-      note: ""
+      note: "",
+      phone: "",
+      preferredChannel: "whatsapp",
+      nextFollowUp: new Date().toISOString().slice(0, 10)
     });
   }
 
@@ -1114,6 +1285,29 @@ function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
           placeholder="Latest note"
           value={form.note}
         />
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, phone: event.target.value }))}
+          placeholder="Phone"
+          value={form.phone}
+        />
+        <select
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, preferredChannel: event.target.value }))
+          }
+          value={form.preferredChannel}
+        >
+          <option value="whatsapp">whatsapp</option>
+          <option value="sms">sms</option>
+          <option value="email">email</option>
+          <option value="phone">phone</option>
+        </select>
+        <input
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, nextFollowUp: event.target.value }))
+          }
+          type="date"
+          value={form.nextFollowUp}
+        />
         <button className="primary-button small" type="submit">
           Add enquiry
         </button>
@@ -1125,6 +1319,8 @@ function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
             <tr>
               <th>Lead</th>
               <th>Status</th>
+              <th>Channel</th>
+              <th>Next Follow-up</th>
               <th>Latest Note</th>
               <th>Action</th>
             </tr>
@@ -1134,10 +1330,70 @@ function EnquiriesView({ addEnquiry, enquiries, setEnquiries }) {
               <tr key={entry.id}>
                 <td>{entry.name}</td>
                 <td><span className="chip">{entry.status}</span></td>
+                <td>{entry.preferredChannel || "whatsapp"}</td>
+                <td>{entry.nextFollowUp || "-"}</td>
                 <td>{entry.note}</td>
                 <td>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => scheduleEnquiryFollowUp(entry.id)}
+                    type="button"
+                  >
+                    Schedule
+                  </button>
                   <button className="ghost-button small" onClick={() => cycleStatus(entry.id)} type="button">
                     Advance status
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function AutomationsView({ automationTasks, completeAutomationTask }) {
+  return (
+    <section className="panel full-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Automations</p>
+          <h2>Scheduled follow-ups</h2>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Contact</th>
+              <th>Channel</th>
+              <th>Due</th>
+              <th>Status</th>
+              <th>Message</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {automationTasks.map((task) => (
+              <tr key={task.id}>
+                <td>{task.title}</td>
+                <td>{task.contactName}</td>
+                <td>{task.channel}</td>
+                <td>{task.dueAt}</td>
+                <td><span className="chip">{task.status}</span></td>
+                <td>{task.message}</td>
+                <td>
+                  <button
+                    className="ghost-button small"
+                    disabled={task.status === "done"}
+                    onClick={() => completeAutomationTask(task.id)}
+                    type="button"
+                  >
+                    {task.status === "done" ? "Completed" : "Mark done"}
                   </button>
                 </td>
               </tr>
