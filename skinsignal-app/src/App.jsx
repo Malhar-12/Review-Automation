@@ -12,7 +12,7 @@ import { hasSupabaseEnv, supabase } from "./supabase";
 import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
 const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Automations", "Settings"];
-const storageKey = "skinsignal-console-state";
+const storageKey = "reviewpulse-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
 function createBlankClinic(owner = "Clinic team") {
@@ -421,7 +421,7 @@ function App() {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "skinsignal-report.json";
+    link.download = "reviewpulse-report.json";
     link.click();
     window.URL.revokeObjectURL(url);
     setNotice("Exported a fresh JSON snapshot of the clinic workspace.");
@@ -518,7 +518,7 @@ function App() {
     setNotice(
       isClinicProfileComplete(updates)
         ? "Clinic settings saved."
-        : "Clinic profile saved locally. Add the remaining details to unlock cloud sync."
+        : "Practice profile saved locally. Add the remaining details to unlock cloud sync."
     );
   }
 
@@ -541,9 +541,9 @@ function App() {
     return (
       <div className="auth-shell">
         <div className="auth-card">
-          <p className="eyebrow">SkinSignal</p>
+          <p className="eyebrow">ReviewPulse</p>
           <h1>Checking your workspace</h1>
-          <p className="muted">Loading your secure clinic console.</p>
+          <p className="muted">Loading your secure practice workspace.</p>
         </div>
       </div>
     );
@@ -557,10 +557,10 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="brand-mark">S</div>
+          <div className="brand-mark">R</div>
           <div>
-            <p className="brand-title">SkinSignal</p>
-            <p className="brand-subtitle">Clinic Console</p>
+            <p className="brand-title">ReviewPulse</p>
+            <p className="brand-subtitle">Practice Growth Console</p>
           </div>
         </div>
 
@@ -578,8 +578,8 @@ function App() {
         </nav>
 
         <div className="sidebar-card">
-          <p className="sidebar-label">Clinic</p>
-          <h3>{clinic.name || "Set up your clinic"}</h3>
+          <p className="sidebar-label">Workspace</p>
+          <h3>{clinic.name || "Set up your practice"}</h3>
           <p>{clinic.city || "Complete onboarding in Settings"}</p>
           <span className="status-pill">{clinic.plan}</span>
           <p className="sidebar-sync">
@@ -597,7 +597,7 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">{activeView}</p>
-            <h1>Good afternoon, {clinic.owner || "Clinic team"}</h1>
+            <h1>Good afternoon, {clinic.owner || "Practice team"}</h1>
             <p className="muted">Here&apos;s what needs your attention today.</p>
           </div>
           <div className="topbar-actions">
@@ -713,12 +713,12 @@ function AuthScreen({ authError, setAuthError }) {
     <div className="auth-shell">
       <div className="auth-card">
         <div>
-          <p className="eyebrow">SkinSignal Secure Access</p>
-          <h1>{mode === "signin" ? "Clinic login" : "Create clinic access"}</h1>
+          <p className="eyebrow">ReviewPulse Secure Access</p>
+          <h1>{mode === "signin" ? "Practice login" : "Create practice access"}</h1>
           <p className="muted">
             {mode === "signin"
-              ? "Sign in to open the live review automation dashboard."
-              : "Create an account to protect this live dashboard before sharing it."}
+              ? "Sign in to open your live review automation workspace."
+              : "Create an account to protect this live workspace before sharing it."}
           </p>
         </div>
 
@@ -784,9 +784,9 @@ function DashboardView({
       {!clinicIsComplete ? (
         <section className="panel onboarding-panel">
           <p className="eyebrow">Get Started</p>
-          <h2>Finish your clinic profile</h2>
+          <h2>Finish your practice profile</h2>
           <p className="muted">
-            Add your clinic name, city, and owner in Settings to activate private Supabase sync for this account.
+            Add your practice name, city, and owner in Settings to activate private Supabase sync for this account.
           </p>
           <button className="primary-button small" onClick={() => setActiveView("Settings")} type="button">
             Complete setup
@@ -1422,13 +1422,13 @@ function SettingsView({ clinic, saveClinic }) {
       <div className="panel-head">
         <div>
           <p className="eyebrow">Settings</p>
-          <h2>Clinic profile</h2>
+          <h2>Practice profile</h2>
         </div>
       </div>
 
       <form className="settings-form" onSubmit={handleSubmit}>
         <label>
-          <span className="settings-label">Clinic Name</span>
+          <span className="settings-label">Practice Name</span>
           <input
             onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
             value={form.name}

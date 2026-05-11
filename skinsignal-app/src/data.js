@@ -1,15 +1,15 @@
 export const clinic = {
-  name: "Radiant Derma Clinic",
-  city: "Bangalore",
+  name: "Northstar Specialty Clinic",
+  city: "Mumbai",
   plan: "Growth Plan",
-  owner: "Dr. Mehta"
+  owner: "Dr. Kapoor"
 };
 
 export const stats = [
   { label: "Average Rating", value: "4.8", detail: "up 0.3 in the last 30 days" },
   { label: "New Reviews", value: "18", detail: "12 from WhatsApp requests" },
   { label: "Pending Replies", value: "6", detail: "AI drafts are ready" },
-  { label: "WhatsApp Enquiries", value: "23", detail: "8 converted to consultations", accent: true }
+  { label: "Patient Enquiries", value: "23", detail: "8 converted to appointments", accent: true }
 ];
 
 export const reviews = [

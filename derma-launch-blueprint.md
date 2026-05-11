@@ -4,7 +4,7 @@
 
 Working brand idea:
 
-**SkinSignal**
+**ReviewPulse**
 
 Simple positioning:
 
@@ -20,7 +20,7 @@ Other usable names:
 
 ## Core Offer
 
-We help dermatology and aesthetic clinics get more 5-star Google reviews, respond faster to every review, and convert more enquiries into booked consultations through WhatsApp.
+We help clinics and specialty practices get more 5-star Google reviews, respond faster to every review, and convert more enquiries into booked appointments through smarter follow-up automation.
 
 What clients get:
 
@@ -126,7 +126,7 @@ Build only what helps you sell and deliver.
 
 **More 5-star reviews. Faster replies. More booked consultations.**
 
-Skin clinics lose patients when reviews go unanswered and enquiries are missed. We help dermatology and aesthetic clinics grow their Google reputation and turn WhatsApp enquiries into consultations.
+Clinics lose patients when reviews go unanswered and enquiries are missed. We help practices grow their Google reputation and turn enquiries into appointments.
 
 Primary CTA:
 
@@ -140,8 +140,11 @@ Secondary CTA:
 
 Built for:
 
-- dermatology clinics
-- aesthetic clinics
+- dental clinics
+- eye clinics
+- orthopedic clinics
+- multi-specialty clinics
+- specialty practices
 - skin and laser centers
 - cosmetic consultation practices
 
@@ -151,7 +154,7 @@ Most clinics already have enough happy patients to grow through Google reviews. 
 
 ### Solution Section
 
-With SkinSignal, your clinic can:
+With ReviewPulse, your clinic can:
 
 - collect more Google reviews from happy patients
 - respond to every review with AI-assisted replies
@@ -204,19 +207,19 @@ Turn your patient experience into better reviews and more booked consultations.
 
 ### WhatsApp Message
 
-Hi Dr. {{name}}, I work with dermatology and aesthetic clinics to improve Google reviews and convert more WhatsApp enquiries into booked consultations. I noticed {{clinic_name}} has strong potential on Google, and I’d love to show you a simple system that helps clinics get more positive reviews and respond faster without adding front-desk work. Open to a quick 10-minute demo this week?
+Hi Dr. {{name}}, I work with clinics and specialty practices to improve Google reviews and convert more enquiries into booked appointments. I noticed {{clinic_name}} has strong potential on Google, and I’d love to show you a simple system that helps practices get more positive reviews and respond faster without adding front-desk work. Open to a quick 10-minute demo this week?
 
 ### Email Subject Lines
 
 - Quick idea to improve Google reviews for {{clinic_name}}
-- Helping skin clinics get more reviews and bookings
+- Helping clinics get more reviews and bookings
 - A simple WhatsApp + Google review system for {{clinic_name}}
 
 ### Cold Email
 
 Hi Dr. {{name}},
 
-I help dermatology and aesthetic clinics get more positive Google reviews, reply faster to reviews, and recover more enquiries through WhatsApp.
+I help clinics get more positive Google reviews, reply faster to reviews, and recover more enquiries through follow-up automation.
 
 Many clinics already have happy patients, but they lose growth because review requests are not consistent and WhatsApp follow-up is delayed.
 

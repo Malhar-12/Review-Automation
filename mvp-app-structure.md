@@ -1,10 +1,10 @@
 # MVP App Structure
 
-This is the recommended structure for the first usable version of SkinSignal.
+This is the recommended structure for the first usable version of ReviewPulse.
 
 ## Product Goal
 
-Build a lightweight SaaS-style workflow for dermatology and aesthetic clinics that handles:
+Build a lightweight SaaS-style workflow for clinics and specialty practices that handles:
 
 - Google review monitoring
 - AI review reply drafts
@@ -27,7 +27,7 @@ Use a simple web app first.
 ## Suggested Folder Structure
 
 ```text
-skinsignal/
+reviewpulse/
   app/
     login/
     dashboard/
@@ -252,4 +252,3 @@ If we keep building in this workspace, the next implementation order should be:
 3. reviews page
 4. patient upload page
 5. campaign page
-

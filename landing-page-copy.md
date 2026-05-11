@@ -4,7 +4,7 @@
 
 **More 5-star reviews. Faster replies. More booked consultations.**
 
-We help dermatology and aesthetic clinics grow their Google reputation and turn WhatsApp enquiries into booked consultations.
+We help clinics and specialty practices grow their Google reputation and turn patient enquiries into booked appointments.
 
 CTA: `Book a Free Demo`
 
