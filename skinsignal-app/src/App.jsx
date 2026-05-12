@@ -15,6 +15,14 @@ const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", 
 const storageKey = "reviewpulse-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
+function getCurrentRoute() {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  return window.location.pathname === "/app" ? "/app" : "/";
+}
+
 function createBlankClinic(owner = "Clinic team") {
   return {
     id: "default-clinic",
@@ -108,6 +116,7 @@ function App() {
   const [authReady, setAuthReady] = useState(!hasSupabaseEnv);
   const [session, setSession] = useState(null);
   const [authError, setAuthError] = useState("");
+  const [route, setRoute] = useState(getCurrentRoute());
   const [activeView, setActiveView] = useState("Dashboard");
   const [notice, setNotice] = useState("Your workspace now saves changes in this browser and can sync with Supabase.");
   const [syncStatus, setSyncStatus] = useState("local");
@@ -147,6 +156,15 @@ function App() {
     ],
     [automationTasks, campaigns, enquiries, patients, reviews]
   );
+
+  useEffect(() => {
+    function handlePopState() {
+      setRoute(getCurrentRoute());
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!hasSupabaseEnv || !supabase) {
@@ -522,6 +540,16 @@ function App() {
     );
   }
 
+  function navigateTo(nextRoute) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.history.pushState({}, "", nextRoute);
+    setRoute(getCurrentRoute());
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function handleLogout() {
     if (!supabase) {
       return;
@@ -549,8 +577,26 @@ function App() {
     );
   }
 
+  if (route !== "/app") {
+    return (
+      <AuthScreen
+        authError={authError}
+        openDashboard={() => navigateTo("/app")}
+        session={session}
+        setAuthError={setAuthError}
+      />
+    );
+  }
+
   if (hasSupabaseEnv && !session) {
-    return <AuthScreen authError={authError} setAuthError={setAuthError} />;
+    return (
+      <AuthScreen
+        authError={authError}
+        openDashboard={() => navigateTo("/app")}
+        session={session}
+        setAuthError={setAuthError}
+      />
+    );
   }
 
   return (
@@ -669,7 +715,7 @@ function App() {
   );
 }
 
-function AuthScreen({ authError, setAuthError }) {
+function AuthScreen({ authError, openDashboard, session, setAuthError }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -745,6 +791,11 @@ function AuthScreen({ authError, setAuthError }) {
             <a href="#features">Features</a>
             <a href="#pricing">Pricing</a>
             <a href="#access">Access</a>
+            {session ? (
+              <button className="link-button public-nav-button" onClick={openDashboard} type="button">
+                Dashboard
+              </button>
+            ) : null}
           </nav>
         </header>
 
@@ -757,30 +808,38 @@ function AuthScreen({ authError, setAuthError }) {
               track patient follow-ups, and convert enquiries into booked appointments.
             </p>
             <div className="public-actions">
-              <button
-                className="primary-button"
-                onClick={() => {
-                  setMode("signup");
-                  setAuthError("");
-                  setStatusMessage("");
-                  window.location.hash = "#access";
-                }}
-                type="button"
-              >
-                Start free
-              </button>
-              <button
-                className="ghost-button"
-                onClick={() => {
-                  setMode("signin");
-                  setAuthError("");
-                  setStatusMessage("");
-                  window.location.hash = "#access";
-                }}
-                type="button"
-              >
-                Login
-              </button>
+              {session ? (
+                <button className="primary-button" onClick={openDashboard} type="button">
+                  Open dashboard
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      setMode("signup");
+                      setAuthError("");
+                      setStatusMessage("");
+                      window.location.hash = "#access";
+                    }}
+                    type="button"
+                  >
+                    Start free
+                  </button>
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      setMode("signin");
+                      setAuthError("");
+                      setStatusMessage("");
+                      window.location.hash = "#access";
+                    }}
+                    type="button"
+                  >
+                    Login
+                  </button>
+                </>
+              )}
             </div>
             <div className="public-stat-row">
               <div>
@@ -801,11 +860,19 @@ function AuthScreen({ authError, setAuthError }) {
           <div className="auth-card" id="access">
             <div>
               <p className="eyebrow">ReviewPulse Secure Access</p>
-              <h2>{mode === "signin" ? "Practice login" : "Create practice access"}</h2>
+              <h2>
+                {session
+                  ? "You are already signed in"
+                  : mode === "signin"
+                    ? "Practice login"
+                    : "Create practice access"}
+              </h2>
               <p className="muted">
-                {mode === "signin"
-                  ? "Sign in to open your live review automation workspace."
-                  : "Create your account and start onboarding your practice."}
+                {session
+                  ? "Open your dashboard, or sign in with another clinic account below."
+                  : mode === "signin"
+                    ? "Sign in to open your live review automation workspace."
+                    : "Create your account and start onboarding your practice."}
               </p>
             </div>
 
@@ -833,6 +900,12 @@ function AuthScreen({ authError, setAuthError }) {
                 {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
               </button>
             </form>
+
+            {session ? (
+              <button className="ghost-button auth-submit" onClick={openDashboard} type="button">
+                Continue to dashboard
+              </button>
+            ) : null}
 
             {authError ? <div className="auth-error">{authError}</div> : null}
             {statusMessage ? <div className="notice-banner auth-status">{statusMessage}</div> : null}
