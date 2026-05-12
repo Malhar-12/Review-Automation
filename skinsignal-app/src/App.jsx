@@ -675,6 +675,27 @@ function AuthScreen({ authError, setAuthError }) {
   const [password, setPassword] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const plans = [
+    {
+      name: "Starter",
+      price: "INR 1,999",
+      detail: "For solo clinics starting review automation",
+      features: ["1 practice workspace", "Review request tracking", "Basic reports"]
+    },
+    {
+      name: "Growth",
+      price: "INR 4,999",
+      detail: "For growing teams that need follow-up workflows",
+      features: ["Everything in Starter", "Automations tab", "Enquiry tracking + exports"],
+      featured: true
+    },
+    {
+      name: "Pro",
+      price: "INR 9,999",
+      detail: "For high-volume clinics and specialty groups",
+      features: ["Everything in Growth", "Priority support", "Future multi-user controls"]
+    }
+  ];
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -711,56 +732,166 @@ function AuthScreen({ authError, setAuthError }) {
 
   return (
     <div className="auth-shell">
-      <div className="auth-card">
-        <div>
-          <p className="eyebrow">ReviewPulse Secure Access</p>
-          <h1>{mode === "signin" ? "Practice login" : "Create practice access"}</h1>
-          <p className="muted">
-            {mode === "signin"
-              ? "Sign in to open your live review automation workspace."
-              : "Create an account to protect this live workspace before sharing it."}
-          </p>
-        </div>
+      <div className="public-shell">
+        <header className="public-header">
+          <div className="sidebar-brand public-brand">
+            <div className="brand-mark">R</div>
+            <div>
+              <p className="brand-title">ReviewPulse</p>
+              <p className="brand-subtitle">Reviews + Follow-Up Automation for Clinics</p>
+            </div>
+          </div>
+          <nav className="public-nav">
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#access">Access</a>
+          </nav>
+        </header>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label>
-            <span className="settings-label">Email</span>
-            <input
-              autoComplete="email"
-              onChange={(event) => setEmail(event.target.value)}
-              type="email"
-              value={email}
-            />
-          </label>
-          <label>
-            <span className="settings-label">Password</span>
-            <input
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              minLength={6}
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              value={password}
-            />
-          </label>
-          <button className="primary-button auth-submit" disabled={submitting} type="submit">
-            {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
-          </button>
-        </form>
+        <section className="public-hero">
+          <div className="public-copy">
+            <p className="eyebrow">Built for clinics and specialty practices</p>
+            <h1>Turn patient visits into reviews, replies, and repeatable follow-ups.</h1>
+            <p className="muted public-lead">
+              ReviewPulse helps dental, eye, ortho, skin, and specialty clinics collect more Google reviews,
+              track patient follow-ups, and convert enquiries into booked appointments.
+            </p>
+            <div className="public-actions">
+              <button
+                className="primary-button"
+                onClick={() => {
+                  setMode("signup");
+                  setAuthError("");
+                  setStatusMessage("");
+                  window.location.hash = "#access";
+                }}
+                type="button"
+              >
+                Start free
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setMode("signin");
+                  setAuthError("");
+                  setStatusMessage("");
+                  window.location.hash = "#access";
+                }}
+                type="button"
+              >
+                Login
+              </button>
+            </div>
+            <div className="public-stat-row">
+              <div>
+                <strong>1 dashboard</strong>
+                <span>reviews, patients, enquiries, automations</span>
+              </div>
+              <div>
+                <strong>Multi-specialty</strong>
+                <span>dental, eye, ortho, neuro, aesthetics, hospitals</span>
+              </div>
+              <div>
+                <strong>Cloud ready</strong>
+                <span>secure practice login with private workspace sync</span>
+              </div>
+            </div>
+          </div>
 
-        {authError ? <div className="auth-error">{authError}</div> : null}
-        {statusMessage ? <div className="notice-banner auth-status">{statusMessage}</div> : null}
+          <div className="auth-card" id="access">
+            <div>
+              <p className="eyebrow">ReviewPulse Secure Access</p>
+              <h2>{mode === "signin" ? "Practice login" : "Create practice access"}</h2>
+              <p className="muted">
+                {mode === "signin"
+                  ? "Sign in to open your live review automation workspace."
+                  : "Create your account and start onboarding your practice."}
+              </p>
+            </div>
 
-        <button
-          className="link-button auth-switch"
-          onClick={() => {
-            setMode((currentMode) => (currentMode === "signin" ? "signup" : "signin"));
-            setAuthError("");
-            setStatusMessage("");
-          }}
-          type="button"
-        >
-          {mode === "signin" ? "Need an account? Create one" : "Already have an account? Sign in"}
-        </button>
+            <form className="auth-form" onSubmit={handleSubmit}>
+              <label>
+                <span className="settings-label">Email</span>
+                <input
+                  autoComplete="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  type="email"
+                  value={email}
+                />
+              </label>
+              <label>
+                <span className="settings-label">Password</span>
+                <input
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  minLength={6}
+                  onChange={(event) => setPassword(event.target.value)}
+                  type="password"
+                  value={password}
+                />
+              </label>
+              <button className="primary-button auth-submit" disabled={submitting} type="submit">
+                {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
+              </button>
+            </form>
+
+            {authError ? <div className="auth-error">{authError}</div> : null}
+            {statusMessage ? <div className="notice-banner auth-status">{statusMessage}</div> : null}
+
+            <button
+              className="link-button auth-switch"
+              onClick={() => {
+                setMode((currentMode) => (currentMode === "signin" ? "signup" : "signin"));
+                setAuthError("");
+                setStatusMessage("");
+              }}
+              type="button"
+            >
+              {mode === "signin" ? "Need an account? Create one" : "Already have an account? Sign in"}
+            </button>
+          </div>
+        </section>
+
+        <section className="public-section" id="features">
+          <div className="public-section-head">
+            <p className="eyebrow">What you get</p>
+            <h2>One workspace for review growth and patient follow-up.</h2>
+          </div>
+          <div className="public-feature-grid">
+            <article className="public-feature-card">
+              <h3>Review requests</h3>
+              <p>Track patients after visits and queue review reminders at the right time.</p>
+            </article>
+            <article className="public-feature-card">
+              <h3>Reply workflow</h3>
+              <p>Review incoming feedback, regenerate drafts, and approve responses faster.</p>
+            </article>
+            <article className="public-feature-card">
+              <h3>Enquiry follow-up</h3>
+              <p>Capture new leads, choose channels, and schedule the next action from one dashboard.</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="public-section" id="pricing">
+          <div className="public-section-head">
+            <p className="eyebrow">Pricing</p>
+            <h2>Simple plans for clinics starting with automation.</h2>
+          </div>
+          <div className="public-pricing-grid">
+            {plans.map((plan) => (
+              <article key={plan.name} className={`public-price-card ${plan.featured ? "featured" : ""}`}>
+                <p className="price-plan">{plan.name}</p>
+                <strong className="public-price-value">{plan.price}<span>/month</span></strong>
+                <p className="muted">{plan.detail}</p>
+                <ul className="public-price-list">
+                  {plan.features.map((feature) => (
+                    <li key={feature}>{feature}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
