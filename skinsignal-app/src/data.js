@@ -123,6 +123,36 @@ export const enquiries = [
   }
 ];
 
+export const appointments = [
+  {
+    id: 1,
+    name: "Aarav P.",
+    mobile: "+91 98990 22001",
+    city: "Mumbai",
+    doctor: "Dr. Kapoor",
+    appointmentDate: "2026-05-14",
+    status: "booked"
+  },
+  {
+    id: 2,
+    name: "Riya S.",
+    mobile: "+91 98990 22002",
+    city: "Pune",
+    doctor: "Dr. Nair",
+    appointmentDate: "2026-05-13",
+    status: "completed"
+  },
+  {
+    id: 3,
+    name: "Kabir M.",
+    mobile: "+91 98990 22003",
+    city: "Delhi",
+    doctor: "Dr. Rao",
+    appointmentDate: "2026-05-15",
+    status: "new"
+  }
+];
+
 export const automationTasks = [
   {
     id: 1,

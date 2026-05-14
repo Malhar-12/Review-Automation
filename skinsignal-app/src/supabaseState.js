@@ -6,6 +6,7 @@ const tableNames = [
   "patients",
   "campaigns",
   "enquiries",
+  "appointments",
   "automation_tasks"
 ];
 
@@ -72,6 +73,18 @@ function mapEnquiryFromRow(row) {
     phone: row.phone ?? "",
     preferredChannel: row.preferred_channel ?? "whatsapp",
     nextFollowUp: row.next_follow_up ?? ""
+  };
+}
+
+function mapAppointmentFromRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    mobile: row.mobile,
+    city: row.city,
+    doctor: row.doctor,
+    appointmentDate: row.appointment_date,
+    status: row.status
   };
 }
 
@@ -156,6 +169,20 @@ function mapEnquiryToRow(enquiry, userId) {
   };
 }
 
+function mapAppointmentToRow(appointment, userId) {
+  return {
+    user_id: userId,
+    id: appointment.id,
+    name: appointment.name,
+    mobile: appointment.mobile ?? "",
+    city: appointment.city ?? "",
+    doctor: appointment.doctor ?? "",
+    appointment_date: appointment.appointmentDate,
+    status: appointment.status,
+    updated_at: new Date().toISOString()
+  };
+}
+
 function mapAutomationTaskToRow(task, userId) {
   return {
     user_id: userId,
@@ -187,7 +214,7 @@ export async function loadRemoteState(userId) {
   }
 
   try {
-    const [clinicResult, reviewsResult, patientsResult, campaignsResult, enquiriesResult, automationTasksResult] =
+    const [clinicResult, reviewsResult, patientsResult, campaignsResult, enquiriesResult, appointmentsResult, automationTasksResult] =
       await Promise.all([
         supabase
           .from("clinic_settings")
@@ -199,6 +226,7 @@ export async function loadRemoteState(userId) {
         supabase.from("patients").select("*").eq("user_id", userId).order("id", { ascending: false }),
         supabase.from("campaigns").select("*").eq("user_id", userId).order("id", { ascending: false }),
         supabase.from("enquiries").select("*").eq("user_id", userId).order("id", { ascending: false }),
+        supabase.from("appointments").select("*").eq("user_id", userId).order("id", { ascending: false }),
         supabase.from("automation_tasks").select("*").eq("user_id", userId).order("id", { ascending: false })
       ]);
 
@@ -208,6 +236,7 @@ export async function loadRemoteState(userId) {
       patientsResult.error,
       campaignsResult.error,
       enquiriesResult.error,
+      appointmentsResult.error,
       automationTasksResult.error
     ].find(Boolean);
 
@@ -223,6 +252,7 @@ export async function loadRemoteState(userId) {
         patients: (patientsResult.data ?? []).map(mapPatientFromRow),
         campaigns: (campaignsResult.data ?? []).map(mapCampaignFromRow),
         enquiries: (enquiriesResult.data ?? []).map(mapEnquiryFromRow),
+        appointments: (appointmentsResult.data ?? []).map(mapAppointmentFromRow),
         automationTasks: (automationTasksResult.data ?? []).map(mapAutomationTaskFromRow)
       }
     };
@@ -240,6 +270,7 @@ export async function pushRemoteState({
   patients,
   campaigns,
   enquiries,
+  appointments,
   automationTasks,
   userId
 }) {
@@ -272,6 +303,11 @@ export async function pushRemoteState({
       supabase
         .from("enquiries")
         .upsert(sortDescending(enquiries).map((enquiry) => mapEnquiryToRow(enquiry, userId)), {
+          onConflict: "user_id,id"
+        }),
+      supabase
+        .from("appointments")
+        .upsert(sortDescending(appointments).map((appointment) => mapAppointmentToRow(appointment, userId)), {
           onConflict: "user_id,id"
         }),
       supabase

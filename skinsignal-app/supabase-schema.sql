@@ -58,6 +58,18 @@ create table if not exists enquiries (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists appointments (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  id bigint not null,
+  name text not null,
+  mobile text not null default '',
+  city text not null default '',
+  doctor text not null default '',
+  appointment_date date not null,
+  status text not null,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists automation_tasks (
   user_id uuid not null references auth.users (id) on delete cascade,
   id bigint not null,
@@ -157,6 +169,16 @@ alter table enquiries add column if not exists preferred_channel text not null d
 alter table enquiries add column if not exists next_follow_up date;
 alter table enquiries add column if not exists updated_at timestamptz not null default now();
 
+alter table appointments add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table appointments add column if not exists mobile text not null default '';
+alter table appointments add column if not exists city text not null default '';
+alter table appointments add column if not exists doctor text not null default '';
+alter table appointments add column if not exists appointment_date date;
+alter table appointments add column if not exists status text;
+alter table appointments add column if not exists updated_at timestamptz not null default now();
+alter table appointments alter column appointment_date set not null;
+alter table appointments alter column status set not null;
+
 alter table automation_tasks add column if not exists user_id uuid references auth.users (id) on delete cascade;
 alter table automation_tasks add column if not exists updated_at timestamptz not null default now();
 
@@ -165,6 +187,7 @@ delete from reviews where user_id is null;
 delete from patients where user_id is null;
 delete from campaigns where user_id is null;
 delete from enquiries where user_id is null;
+delete from appointments where user_id is null;
 delete from automation_tasks where user_id is null;
 
 alter table clinic_settings alter column user_id set not null;
@@ -172,6 +195,7 @@ alter table reviews alter column user_id set not null;
 alter table patients alter column user_id set not null;
 alter table campaigns alter column user_id set not null;
 alter table enquiries alter column user_id set not null;
+alter table appointments alter column user_id set not null;
 alter table automation_tasks alter column user_id set not null;
 
 alter table clinic_settings drop constraint if exists clinic_settings_pkey;
@@ -179,6 +203,7 @@ alter table reviews drop constraint if exists reviews_pkey;
 alter table patients drop constraint if exists patients_pkey;
 alter table campaigns drop constraint if exists campaigns_pkey;
 alter table enquiries drop constraint if exists enquiries_pkey;
+alter table appointments drop constraint if exists appointments_pkey;
 alter table automation_tasks drop constraint if exists automation_tasks_pkey;
 
 alter table clinic_settings add constraint clinic_settings_pkey primary key (user_id, id);
@@ -186,6 +211,7 @@ alter table reviews add constraint reviews_pkey primary key (user_id, id);
 alter table patients add constraint patients_pkey primary key (user_id, id);
 alter table campaigns add constraint campaigns_pkey primary key (user_id, id);
 alter table enquiries add constraint enquiries_pkey primary key (user_id, id);
+alter table appointments add constraint appointments_pkey primary key (user_id, id);
 alter table automation_tasks add constraint automation_tasks_pkey primary key (user_id, id);
 
 create index if not exists clinic_settings_user_updated_idx on clinic_settings (user_id, updated_at desc);
@@ -193,6 +219,7 @@ create index if not exists reviews_user_updated_idx on reviews (user_id, updated
 create index if not exists patients_user_updated_idx on patients (user_id, updated_at desc);
 create index if not exists campaigns_user_updated_idx on campaigns (user_id, updated_at desc);
 create index if not exists enquiries_user_updated_idx on enquiries (user_id, updated_at desc);
+create index if not exists appointments_user_updated_idx on appointments (user_id, updated_at desc);
 create index if not exists automation_tasks_user_updated_idx on automation_tasks (user_id, updated_at desc);
 
 alter table clinic_settings enable row level security;
@@ -200,6 +227,7 @@ alter table reviews enable row level security;
 alter table patients enable row level security;
 alter table campaigns enable row level security;
 alter table enquiries enable row level security;
+alter table appointments enable row level security;
 alter table automation_tasks enable row level security;
 
 drop policy if exists "users read own clinic_settings" on clinic_settings;
@@ -254,6 +282,17 @@ using (auth.uid() = user_id);
 drop policy if exists "users write own enquiries" on enquiries;
 create policy "users write own enquiries"
 on enquiries for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists "users read own appointments" on appointments;
+create policy "users read own appointments"
+on appointments for select
+using (auth.uid() = user_id);
+
+drop policy if exists "users write own appointments" on appointments;
+create policy "users write own appointments"
+on appointments for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 

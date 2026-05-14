@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   automationTasks as initialAutomationTasks,
+  appointments as initialAppointments,
   campaigns as initialCampaigns,
   clinic as initialClinic,
   enquiries as initialEnquiries,
@@ -11,7 +12,7 @@ import {
 import { hasSupabaseEnv, supabase } from "./supabase";
 import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
-const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Automations", "Settings"];
+const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Appointments", "Automations", "Settings"];
 const storageKey = "reviewpulse-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
@@ -107,6 +108,7 @@ function normalizeRemoteState(remoteState, session) {
     patients: remoteState.patients ?? [],
     campaigns: remoteState.campaigns ?? [],
     enquiries: remoteState.enquiries ?? [],
+    appointments: remoteState.appointments ?? [],
     automationTasks: remoteState.automationTasks ?? []
   };
 }
@@ -125,6 +127,7 @@ function App() {
   const [patients, setPatients] = useState(storedState?.patients ?? initialPatients);
   const [campaigns, setCampaigns] = useState(storedState?.campaigns ?? initialCampaigns);
   const [enquiries, setEnquiries] = useState(storedState?.enquiries ?? initialEnquiries);
+  const [appointments, setAppointments] = useState(storedState?.appointments ?? initialAppointments);
   const [automationTasks, setAutomationTasks] = useState(
     storedState?.automationTasks ?? initialAutomationTasks
   );
@@ -226,6 +229,7 @@ function App() {
         setPatients(nextState.patients);
         setCampaigns(nextState.campaigns);
         setEnquiries(nextState.enquiries);
+        setAppointments(nextState.appointments);
         setAutomationTasks(nextState.automationTasks);
         setSyncStatus(isClinicProfileComplete(nextState.clinic) ? "supabase" : "setup");
         remoteReadyRef.current = true;
@@ -258,10 +262,11 @@ function App() {
         patients,
         campaigns,
         enquiries,
+        appointments,
         automationTasks
       })
     );
-  }, [automationTasks, campaigns, clinic, enquiries, patients, reviews]);
+  }, [appointments, automationTasks, campaigns, clinic, enquiries, patients, reviews]);
 
   useEffect(() => {
     if (!hasLoadedRemoteRef.current || !remoteReadyRef.current) {
@@ -282,6 +287,7 @@ function App() {
         patients,
         campaigns,
         enquiries,
+        appointments,
         automationTasks,
         userId: session?.user?.id
       });
@@ -304,14 +310,14 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [automationTasks, campaigns, clinic, clinicIsComplete, enquiries, patients, reviews, session]);
+  }, [appointments, automationTasks, campaigns, clinic, clinicIsComplete, enquiries, patients, reviews, session]);
 
   const stats = useMemo(() => {
     const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
     const averageRating = reviews.length ? (ratingTotal / reviews.length).toFixed(1) : "0.0";
     const pendingReplies = reviews.filter((review) => review.status !== "approved").length;
     const sentRequests = patients.filter((patient) => patient.reviewStatus !== "pending").length;
-    const bookedLeads = enquiries.filter((entry) => entry.status === "booked").length;
+    const completedAppointments = appointments.filter((appointment) => appointment.status === "completed").length;
 
     return [
       {
@@ -330,13 +336,13 @@ function App() {
         detail: `${reviews.filter((review) => review.status === "needs_edit").length} need edits`
       },
       {
-        label: "Booked Enquiries",
-        value: String(bookedLeads),
-        detail: `${enquiries.length} total leads in the tracker`,
+        label: "Completed Visits",
+        value: String(completedAppointments),
+        detail: `${appointments.filter((appointment) => appointment.status === "booked").length} appointments currently booked`,
         accent: true
       }
     ];
-  }, [enquiries, patients, reviews]);
+  }, [appointments, patients, reviews]);
 
   useEffect(() => {
     if (!notice) {
@@ -482,6 +488,50 @@ function App() {
     setNotice(`Added ${enquiry.name} to the lead tracker.`);
   }
 
+  function addAppointment(appointment) {
+    setAppointments((currentAppointments) => [{ id: Date.now(), ...appointment }, ...currentAppointments]);
+
+    if (appointment.status === "completed") {
+      setPatients((currentPatients) => {
+        const alreadyTracked = currentPatients.some(
+          (patient) => patient.name === appointment.name && patient.phone === appointment.mobile
+        );
+
+        if (alreadyTracked) {
+          return currentPatients;
+        }
+
+        return [
+          {
+            id: Date.now() + 1,
+            name: appointment.name,
+            visitDate: appointment.appointmentDate,
+            reviewStatus: "pending",
+            feedbackStatus: "unknown",
+            phone: appointment.mobile,
+            email: "",
+            nextFollowUp: appointment.appointmentDate
+          },
+          ...currentPatients
+        ];
+      });
+
+      setAutomationTasks((currentTasks) => [
+        buildAutomationTask({
+          title: "Post-visit review request",
+          contactName: appointment.name,
+          channel: appointment.mobile ? "whatsapp" : "manual",
+          dueAt: `${appointment.appointmentDate} 19:00`,
+          source: "appointment",
+          message: "Send a review request after the completed clinic visit."
+        }),
+        ...currentTasks
+      ]);
+    }
+
+    setNotice(`Added appointment for ${appointment.name}.`);
+  }
+
   function schedulePatientFollowUp(patientId) {
     const patient = patients.find((entry) => entry.id === patientId);
 
@@ -529,6 +579,69 @@ function App() {
       currentTasks.map((task) => (task.id === taskId ? { ...task, status: "done" } : task))
     );
     setNotice("Automation task marked complete.");
+  }
+
+  function advanceAppointmentStatus(appointmentId) {
+    const statusOrder = ["new", "booked", "completed", "cancelled", "no_show"];
+    let updatedAppointment = null;
+
+    setAppointments((currentAppointments) =>
+      currentAppointments.map((appointment) => {
+        if (appointment.id !== appointmentId) {
+          return appointment;
+        }
+
+        const currentIndex = statusOrder.indexOf(appointment.status);
+        const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
+        updatedAppointment = { ...appointment, status: nextStatus };
+        return updatedAppointment;
+      })
+    );
+
+    if (!updatedAppointment) {
+      return;
+    }
+
+    if (updatedAppointment.status === "completed") {
+      setPatients((currentPatients) => {
+        const alreadyTracked = currentPatients.some(
+          (patient) =>
+            patient.name === updatedAppointment.name && patient.phone === updatedAppointment.mobile
+        );
+
+        if (alreadyTracked) {
+          return currentPatients;
+        }
+
+        return [
+          {
+            id: Date.now() + 2,
+            name: updatedAppointment.name,
+            visitDate: updatedAppointment.appointmentDate,
+            reviewStatus: "pending",
+            feedbackStatus: "unknown",
+            phone: updatedAppointment.mobile,
+            email: "",
+            nextFollowUp: updatedAppointment.appointmentDate
+          },
+          ...currentPatients
+        ];
+      });
+
+      setAutomationTasks((currentTasks) => [
+        buildAutomationTask({
+          title: "Post-visit review request",
+          contactName: updatedAppointment.name,
+          channel: updatedAppointment.mobile ? "whatsapp" : "manual",
+          dueAt: `${updatedAppointment.appointmentDate} 19:00`,
+          source: "appointment",
+          message: "Send a review request after the completed clinic visit."
+        }),
+        ...currentTasks
+      ]);
+    }
+
+    setNotice(`Appointment status moved to ${updatedAppointment.status}.`);
   }
 
   function saveClinic(updates) {
@@ -668,6 +781,7 @@ function App() {
 
         {activeView === "Dashboard" && (
           <DashboardView
+            appointments={appointments}
             automationStats={automationStats}
             automationTasks={automationTasks}
             campaigns={campaigns}
@@ -701,6 +815,13 @@ function App() {
             enquiries={enquiries}
             scheduleEnquiryFollowUp={scheduleEnquiryFollowUp}
             setEnquiries={setEnquiries}
+          />
+        )}
+        {activeView === "Appointments" && (
+          <AppointmentsView
+            addAppointment={addAppointment}
+            appointments={appointments}
+            advanceAppointmentStatus={advanceAppointmentStatus}
           />
         )}
         {activeView === "Automations" && (
@@ -973,6 +1094,7 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
 function DashboardView({
   automationStats,
   automationTasks,
+  appointments,
   campaigns,
   clinicIsComplete,
   enquiries,
@@ -1084,6 +1206,19 @@ function DashboardView({
               <span className="status-pill warm">{feedbackItems.length} open</span>
             </div>
             <SimpleList items={feedbackItems} titleKey="title" detailKey="submittedAt" />
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <p className="eyebrow">Appointments</p>
+                <h2>Visit pipeline</h2>
+              </div>
+              <span className="status-pill cool">
+                {appointments.filter((appointment) => appointment.status === "completed").length} completed
+              </span>
+            </div>
+            <SimpleList items={appointments.slice(0, 3)} titleKey="name" detailKey="doctor" />
           </section>
 
           <section className="panel">
@@ -1547,6 +1682,133 @@ function EnquiriesView({ addEnquiry, enquiries, scheduleEnquiryFollowUp, setEnqu
                   </button>
                   <button className="ghost-button small" onClick={() => cycleStatus(entry.id)} type="button">
                     Advance status
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function AppointmentsView({ addAppointment, appointments, advanceAppointmentStatus }) {
+  const [form, setForm] = useState({
+    name: "",
+    mobile: "",
+    city: "",
+    doctor: "",
+    appointmentDate: new Date().toISOString().slice(0, 10),
+    status: "booked"
+  });
+
+  function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!form.name.trim() || !form.mobile.trim() || !form.city.trim() || !form.doctor.trim()) {
+      return;
+    }
+
+    addAppointment({
+      ...form,
+      name: form.name.trim(),
+      mobile: form.mobile.trim(),
+      city: form.city.trim(),
+      doctor: form.doctor.trim()
+    });
+
+    setForm({
+      name: "",
+      mobile: "",
+      city: "",
+      doctor: "",
+      appointmentDate: new Date().toISOString().slice(0, 10),
+      status: "booked"
+    });
+  }
+
+  return (
+    <section className="panel full-panel">
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">Appointments</p>
+          <h2>Booked visits</h2>
+        </div>
+      </div>
+
+      <form className="inline-form appointment-form" onSubmit={handleSubmit}>
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
+          placeholder="Patient name"
+          value={form.name}
+        />
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, mobile: event.target.value }))}
+          placeholder="Mobile number"
+          value={form.mobile}
+        />
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, city: event.target.value }))}
+          placeholder="City"
+          value={form.city}
+        />
+        <input
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, doctor: event.target.value }))}
+          placeholder="Doctor"
+          value={form.doctor}
+        />
+        <input
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, appointmentDate: event.target.value }))
+          }
+          type="date"
+          value={form.appointmentDate}
+        />
+        <select
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, status: event.target.value }))}
+          value={form.status}
+        >
+          <option value="new">new</option>
+          <option value="booked">booked</option>
+          <option value="completed">completed</option>
+          <option value="cancelled">cancelled</option>
+          <option value="no_show">no_show</option>
+        </select>
+        <button className="primary-button small" type="submit">
+          Add appointment
+        </button>
+      </form>
+
+      <div className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Mobile</th>
+              <th>City</th>
+              <th>Doctor</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {appointments.map((appointment) => (
+              <tr key={appointment.id}>
+                <td>{appointment.name}</td>
+                <td>{appointment.mobile}</td>
+                <td>{appointment.city}</td>
+                <td>{appointment.doctor}</td>
+                <td>{appointment.appointmentDate}</td>
+                <td><span className="chip">{appointment.status}</span></td>
+                <td>
+                  <button
+                    className="ghost-button small"
+                    onClick={() => advanceAppointmentStatus(appointment.id)}
+                    type="button"
+                  >
+                    Advance
                   </button>
                 </td>
               </tr>
