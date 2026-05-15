@@ -71,6 +71,11 @@ textarea {
   margin: 0 auto;
 }
 
+.setup-shell {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
 .public-header,
 .public-hero,
 .public-feature-grid,
@@ -175,6 +180,14 @@ textarea {
   width: min(100%, 460px);
   display: grid;
   gap: 20px;
+}
+
+.setup-card {
+  padding: 32px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow);
 }
 
 .signed-in-panel {
@@ -768,6 +781,21 @@ th {
 
 .settings-wide {
   grid-column: 1 / -1;
+}
+
+.setup-form {
+  margin-top: 22px;
+}
+
+.setup-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.inline-error {
+  margin: 12px 0 0;
 }
 
 .campaign-head {

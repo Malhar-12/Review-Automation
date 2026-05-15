@@ -12,7 +12,7 @@ import {
 import { hasSupabaseEnv, supabase } from "./supabase";
 import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
-const navItems = ["Dashboard", "Reviews", "Patients", "Campaigns", "Enquiries", "Appointments", "Automations", "Settings"];
+const navItems = ["Dashboard", "Appointments", "Patients", "Reviews", "Campaigns", "Automations", "Enquiries", "Settings"];
 const storageKey = "reviewpulse-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
@@ -29,7 +29,7 @@ function createBlankClinic(owner = "Clinic team") {
     id: "default-clinic",
     name: "",
     city: "",
-    plan: "Launch Plan",
+    plan: "Free Plan",
     owner,
     googleReviewLink: ""
   };
@@ -709,6 +709,7 @@ function App() {
     return (
         <AuthScreen
           authError={authError}
+          clinicIsComplete={clinicIsComplete}
           openDashboard={() => navigateTo("/app")}
           session={session}
           setAuthError={setAuthError}
@@ -720,10 +721,17 @@ function App() {
     return (
       <AuthScreen
         authError={authError}
+        clinicIsComplete={clinicIsComplete}
         openDashboard={() => navigateTo("/app")}
         session={session}
         setAuthError={setAuthError}
       />
+    );
+  }
+
+  if (session && !clinicIsComplete) {
+    return (
+      <ClinicSetupScreen clinic={clinic} handleLogout={handleLogout} saveClinic={saveClinic} />
     );
   }
 
@@ -837,6 +845,7 @@ function App() {
             addAppointment={addAppointment}
             appointments={appointments}
             advanceAppointmentStatus={advanceAppointmentStatus}
+            clinic={clinic}
           />
         )}
         {activeView === "Automations" && (
@@ -851,7 +860,7 @@ function App() {
   );
 }
 
-function AuthScreen({ authError, openDashboard, session, setAuthError }) {
+function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAuthError }) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -863,13 +872,13 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
       name: "Starter",
       price: "INR 1,999",
       detail: "For solo clinics starting review automation",
-      features: ["1 practice workspace", "Review request tracking", "Basic reports"]
+      features: ["1 practice workspace", "Appointment + patient tracking", "Basic reports"]
     },
     {
       name: "Growth",
       price: "INR 4,999",
       detail: "For growing teams that need follow-up workflows",
-      features: ["Everything in Starter", "Automations tab", "Enquiry tracking + exports"],
+      features: ["Everything in Starter", "Automations tab", "Review workflow + exports"],
       featured: true
     },
     {
@@ -942,14 +951,10 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
             <h1>Turn patient visits into reviews, replies, and repeatable follow-ups.</h1>
             <p className="muted public-lead">
               ReviewPulse helps dental, eye, ortho, skin, and specialty clinics collect more Google reviews,
-              track patient follow-ups, and convert enquiries into booked appointments.
+              track appointments, follow up with patients, and send review requests after completed visits.
             </p>
             <div className="public-actions">
-              {session ? (
-                <button className="primary-button" onClick={openDashboard} type="button">
-                  Open dashboard
-                </button>
-              ) : (
+              {session ? null : (
                 <>
                   <button
                     className="primary-button"
@@ -981,7 +986,7 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
             <div className="public-stat-row">
               <div>
                 <strong>1 dashboard</strong>
-                <span>reviews, patients, enquiries, automations</span>
+                <span>appointments, patients, reviews, automations</span>
               </div>
               <div>
                 <strong>Multi-specialty</strong>
@@ -999,14 +1004,18 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
               <p className="eyebrow">ReviewPulse Secure Access</p>
               <h2>
                 {session && !showSwitchAccount
-                  ? "You are signed in"
+                  ? clinicIsComplete
+                    ? "Welcome back"
+                    : "Finish clinic setup"
                   : mode === "signin"
                     ? "Practice login"
                     : "Create practice access"}
               </h2>
               <p className="muted">
                 {session && !showSwitchAccount
-                  ? "Open your dashboard directly, or switch to another clinic account only if needed."
+                  ? clinicIsComplete
+                    ? "Open your dashboard directly, or switch to another clinic account only if needed."
+                    : "Your account is ready. Complete clinic details first, then start using the dashboard."
                   : mode === "signin"
                     ? "Sign in to open your live review automation workspace."
                     : "Create your account and start onboarding your practice."}
@@ -1016,8 +1025,8 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
             {session && !showSwitchAccount ? (
               <div className="signed-in-panel">
                 <div className="signed-in-badge">{session.user?.email}</div>
-                <button className="primary-button auth-submit" onClick={openDashboard} type="button">
-                  Open dashboard
+                <button className="primary-button" onClick={openDashboard} type="button">
+                  {clinicIsComplete ? "Open dashboard" : "Continue setup"}
                 </button>
                 <button
                   className="ghost-button auth-submit"
@@ -1117,6 +1126,91 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
               </article>
             ))}
           </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
+  const [form, setForm] = useState(clinic);
+
+  useEffect(() => {
+    setForm(clinic);
+  }, [clinic]);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    saveClinic({
+      ...form,
+      name: form.name.trim(),
+      city: form.city.trim(),
+      owner: form.owner.trim(),
+      googleReviewLink: form.googleReviewLink?.trim() || "",
+      plan: form.plan || "Free Plan"
+    });
+  }
+
+  const canContinue = Boolean(form.name?.trim() && form.city?.trim() && form.owner?.trim());
+
+  return (
+    <div className="auth-shell">
+      <div className="setup-shell">
+        <section className="setup-card">
+          <p className="eyebrow">Welcome to ReviewPulse</p>
+          <h1>Set up your clinic first</h1>
+          <p className="muted">
+            Add your clinic details once. Then your team can start using appointments, patients, and review automation.
+          </p>
+
+          <form className="settings-form setup-form" onSubmit={handleSubmit}>
+            <label>
+              <span className="settings-label">Clinic Name</span>
+              <input
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
+                placeholder="Vivek Derma Clinic"
+                value={form.name}
+              />
+            </label>
+            <label>
+              <span className="settings-label">City</span>
+              <input
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, city: event.target.value }))}
+                placeholder="Bangalore"
+                value={form.city}
+              />
+            </label>
+            <label>
+              <span className="settings-label">Owner / Admin</span>
+              <input
+                onChange={(event) => setForm((currentForm) => ({ ...currentForm, owner: event.target.value }))}
+                placeholder="Dr. Vivek"
+                value={form.owner}
+              />
+            </label>
+            <label>
+              <span className="settings-label">Plan</span>
+              <input disabled value={form.plan || "Free Plan"} />
+            </label>
+            <label className="settings-wide">
+              <span className="settings-label">Google Review Link</span>
+              <input
+                onChange={(event) =>
+                  setForm((currentForm) => ({ ...currentForm, googleReviewLink: event.target.value }))
+                }
+                placeholder="Paste your Google review link here"
+                value={form.googleReviewLink || ""}
+              />
+            </label>
+            <div className="setup-actions">
+              <button className="primary-button" disabled={!canContinue} type="submit">
+                Start dashboard
+              </button>
+              <button className="ghost-button" onClick={handleLogout} type="button">
+                Logout
+              </button>
+            </div>
+          </form>
         </section>
       </div>
     </div>
@@ -1656,35 +1750,46 @@ function EnquiriesView({ addEnquiry, enquiries, scheduleEnquiryFollowUp, setEnqu
   );
 }
 
-function AppointmentsView({ addAppointment, appointments, advanceAppointmentStatus }) {
+function AppointmentsView({ addAppointment, appointments, advanceAppointmentStatus, clinic }) {
   const [form, setForm] = useState({
     name: "",
     mobile: "",
-    city: "",
+    city: clinic?.city || "",
     doctor: "",
     appointmentDate: new Date().toISOString().slice(0, 10),
     status: "booked"
   });
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      city: currentForm.city || clinic?.city || ""
+    }));
+  }, [clinic?.city]);
 
   function handleSubmit(event) {
     event.preventDefault();
 
-    if (!form.name.trim() || !form.mobile.trim() || !form.city.trim() || !form.doctor.trim()) {
+    if (!form.name.trim() || !form.mobile.trim()) {
+      setFormError("Enter patient name and mobile number.");
       return;
     }
+
+    setFormError("");
 
     addAppointment({
       ...form,
       name: form.name.trim(),
       mobile: form.mobile.trim(),
-      city: form.city.trim(),
-      doctor: form.doctor.trim()
+      city: form.city.trim() || clinic?.city || "Not set",
+      doctor: form.doctor.trim() || clinic?.owner || "General doctor"
     });
 
     setForm({
       name: "",
       mobile: "",
-      city: "",
+      city: clinic?.city || "",
       doctor: "",
       appointmentDate: new Date().toISOString().slice(0, 10),
       status: "booked"
@@ -1697,6 +1802,12 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
         <div>
           <p className="eyebrow">Appointments</p>
           <h2>Booked visits</h2>
+        </div>
+      </div>
+
+      <div className="flow-hint">
+        <div>
+          <strong>Main receptionist flow:</strong> add appointment here first. Patients and review follow-ups will be created automatically from this step.
         </div>
       </div>
 
@@ -1718,7 +1829,7 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
         />
         <input
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, doctor: event.target.value }))}
-          placeholder="Doctor"
+          placeholder="Doctor (optional)"
           value={form.doctor}
         />
         <input
@@ -1742,6 +1853,8 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
           Add appointment
         </button>
       </form>
+
+      {formError ? <div className="auth-error inline-error">{formError}</div> : null}
 
       <div className="table-card">
         <table>
