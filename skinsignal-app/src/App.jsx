@@ -975,7 +975,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
       name: "Growth",
       price: "INR 4,999",
       detail: "For growing teams that need follow-up workflows",
-      features: ["Everything in Starter", "Automations tab", "Review workflow + exports"],
+      features: ["Everything in Free", "Automations tab", "Review workflow + exports"],
       featured: true
     },
     {
@@ -1207,7 +1207,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
         <section className="public-section" id="pricing">
           <div className="public-section-head">
             <p className="eyebrow">Pricing</p>
-            <h2>Simple plans for clinics starting with automation.</h2>
+            <h2>Simple plans for clinics growing with automation.</h2>
           </div>
           <div className="public-pricing-grid">
             {plans.map((plan) => (
