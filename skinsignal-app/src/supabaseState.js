@@ -24,7 +24,8 @@ function mapClinicFromRow(row) {
     name: row.name,
     city: row.city,
     plan: row.plan,
-    owner: row.owner
+    owner: row.owner,
+    googleReviewLink: row.google_review_link ?? ""
   };
 }
 
@@ -109,6 +110,7 @@ function mapClinicToRow(clinic, userId) {
     city: clinic.city,
     plan: clinic.plan,
     owner: clinic.owner,
+    google_review_link: clinic.googleReviewLink ?? "",
     updated_at: new Date().toISOString()
   };
 }

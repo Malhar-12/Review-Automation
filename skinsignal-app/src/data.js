@@ -2,7 +2,8 @@ export const clinic = {
   name: "Northstar Specialty Clinic",
   city: "Mumbai",
   plan: "Growth Plan",
-  owner: "Dr. Kapoor"
+  owner: "Dr. Kapoor",
+  googleReviewLink: ""
 };
 
 export const stats = [

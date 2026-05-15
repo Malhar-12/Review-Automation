@@ -177,6 +177,20 @@ textarea {
   gap: 20px;
 }
 
+.signed-in-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.signed-in-badge {
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font-weight: 700;
+}
+
 .auth-form {
   display: grid;
   gap: 14px;
@@ -750,6 +764,10 @@ th {
 
 .settings-submit {
   width: fit-content;
+}
+
+.settings-wide {
+  grid-column: 1 / -1;
 }
 
 .campaign-head {

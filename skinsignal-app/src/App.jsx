@@ -30,7 +30,8 @@ function createBlankClinic(owner = "Clinic team") {
     name: "",
     city: "",
     plan: "Launch Plan",
-    owner
+    owner,
+    googleReviewLink: ""
   };
 }
 
@@ -97,6 +98,17 @@ function buildAutomationTask({ title, contactName, channel, dueAt, source, messa
     source,
     message
   };
+}
+
+function buildReviewRequestMessage(clinic, patientName) {
+  const practiceName = clinic?.name?.trim() || "our clinic";
+  const reviewLink = clinic?.googleReviewLink?.trim();
+
+  if (reviewLink) {
+    return `Hi ${patientName}, thank you for visiting ${practiceName}. Please share your feedback here: ${reviewLink}`;
+  }
+
+  return `Hi ${patientName}, thank you for visiting ${practiceName}. Add your Google review link in Settings before sending this request.`;
 }
 
 function getPatientReviewStatusFromAppointment(status) {
@@ -425,7 +437,7 @@ function App() {
               channel: patient.phone ? "whatsapp" : patient.email ? "email" : "manual",
               dueAt: `${patient.nextFollowUp || patient.visitDate} 18:00`,
               source: "patient",
-              message: "Send a reminder if the patient has not opened the review link."
+              message: buildReviewRequestMessage(clinic, patient.name)
             })
           );
           return { ...patient, reviewStatus: "sent" };
@@ -538,7 +550,7 @@ function App() {
             channel: appointment.mobile ? "whatsapp" : "manual",
             dueAt: `${appointment.appointmentDate} 19:00`,
             source: "appointment",
-            message: "Send a review request after the completed clinic visit."
+            message: buildReviewRequestMessage(clinic, appointment.name)
           }),
           ...currentTasks
         ];
@@ -633,7 +645,7 @@ function App() {
             channel: updatedAppointment.mobile ? "whatsapp" : "manual",
             dueAt: `${updatedAppointment.appointmentDate} 19:00`,
             source: "appointment",
-            message: "Send a review request after the completed clinic visit."
+            message: buildReviewRequestMessage(clinic, updatedAppointment.name)
           }),
           ...currentTasks
         ];
@@ -695,12 +707,12 @@ function App() {
 
   if (route !== "/app") {
     return (
-      <AuthScreen
-        authError={authError}
-        openDashboard={() => navigateTo("/app")}
-        session={session}
-        setAuthError={setAuthError}
-      />
+        <AuthScreen
+          authError={authError}
+          openDashboard={() => navigateTo("/app")}
+          session={session}
+          setAuthError={setAuthError}
+        />
     );
   }
 
@@ -845,6 +857,7 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
   const [password, setPassword] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showSwitchAccount, setShowSwitchAccount] = useState(false);
   const plans = [
     {
       name: "Starter",
@@ -985,51 +998,66 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
             <div>
               <p className="eyebrow">ReviewPulse Secure Access</p>
               <h2>
-                {session
-                  ? "You are already signed in"
+                {session && !showSwitchAccount
+                  ? "You are signed in"
                   : mode === "signin"
                     ? "Practice login"
                     : "Create practice access"}
               </h2>
               <p className="muted">
-                {session
-                  ? "Open your dashboard, or sign in with another clinic account below."
+                {session && !showSwitchAccount
+                  ? "Open your dashboard directly, or switch to another clinic account only if needed."
                   : mode === "signin"
                     ? "Sign in to open your live review automation workspace."
                     : "Create your account and start onboarding your practice."}
               </p>
             </div>
 
-            <form className="auth-form" onSubmit={handleSubmit}>
-              <label>
-                <span className="settings-label">Email</span>
-                <input
-                  autoComplete="email"
-                  onChange={(event) => setEmail(event.target.value)}
-                  type="email"
-                  value={email}
-                />
-              </label>
-              <label>
-                <span className="settings-label">Password</span>
-                <input
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  minLength={6}
-                  onChange={(event) => setPassword(event.target.value)}
-                  type="password"
-                  value={password}
-                />
-              </label>
-              <button className="primary-button auth-submit" disabled={submitting} type="submit">
-                {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
-              </button>
-            </form>
-
-            {session ? (
-              <button className="ghost-button auth-submit" onClick={openDashboard} type="button">
-                Continue to dashboard
-              </button>
-            ) : null}
+            {session && !showSwitchAccount ? (
+              <div className="signed-in-panel">
+                <div className="signed-in-badge">{session.user?.email}</div>
+                <button className="primary-button auth-submit" onClick={openDashboard} type="button">
+                  Open dashboard
+                </button>
+                <button
+                  className="ghost-button auth-submit"
+                  onClick={() => {
+                    setShowSwitchAccount(true);
+                    setMode("signin");
+                    setAuthError("");
+                    setStatusMessage("");
+                  }}
+                  type="button"
+                >
+                  Use another clinic account
+                </button>
+              </div>
+            ) : (
+              <form className="auth-form" onSubmit={handleSubmit}>
+                <label>
+                  <span className="settings-label">Email</span>
+                  <input
+                    autoComplete="email"
+                    onChange={(event) => setEmail(event.target.value)}
+                    type="email"
+                    value={email}
+                  />
+                </label>
+                <label>
+                  <span className="settings-label">Password</span>
+                  <input
+                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    minLength={6}
+                    onChange={(event) => setPassword(event.target.value)}
+                    type="password"
+                    value={password}
+                  />
+                </label>
+                <button className="primary-button auth-submit" disabled={submitting} type="submit">
+                  {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
+                </button>
+              </form>
+            )}
 
             {authError ? <div className="auth-error">{authError}</div> : null}
             {statusMessage ? <div className="notice-banner auth-status">{statusMessage}</div> : null}
@@ -1038,6 +1066,7 @@ function AuthScreen({ authError, openDashboard, session, setAuthError }) {
               className="link-button auth-switch"
               onClick={() => {
                 setMode((currentMode) => (currentMode === "signin" ? "signup" : "signin"));
+                setShowSwitchAccount(true);
                 setAuthError("");
                 setStatusMessage("");
               }}
@@ -1532,6 +1561,13 @@ function EnquiriesView({ addEnquiry, enquiries, scheduleEnquiryFollowUp, setEnqu
         </div>
       </div>
 
+      <div className="flow-hint">
+        <div>
+          <strong>Use this for people who asked but have not booked yet.</strong> Once they confirm,
+          move them into <span>Appointments</span>.
+        </div>
+      </div>
+
       <form className="inline-form enquiry-form" onSubmit={handleSubmit}>
         <input
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
@@ -1850,6 +1886,16 @@ function SettingsView({ clinic, saveClinic }) {
           <input
             onChange={(event) => setForm((currentForm) => ({ ...currentForm, owner: event.target.value }))}
             value={form.owner}
+          />
+        </label>
+        <label className="settings-wide">
+          <span className="settings-label">Google Review Link</span>
+          <input
+            onChange={(event) =>
+              setForm((currentForm) => ({ ...currentForm, googleReviewLink: event.target.value }))
+            }
+            placeholder="Paste your Google review link here"
+            value={form.googleReviewLink || ""}
           />
         </label>
         <button className="primary-button settings-submit" type="submit">

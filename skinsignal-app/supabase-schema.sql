@@ -7,6 +7,7 @@ create table if not exists clinic_settings (
   city text not null,
   plan text not null,
   owner text not null,
+  google_review_link text not null default '',
   updated_at timestamptz not null default now()
 );
 
@@ -84,6 +85,7 @@ create table if not exists automation_tasks (
 );
 
 alter table clinic_settings add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table clinic_settings add column if not exists google_review_link text not null default '';
 alter table clinic_settings add column if not exists updated_at timestamptz not null default now();
 
 alter table reviews add column if not exists user_id uuid references auth.users (id) on delete cascade;
