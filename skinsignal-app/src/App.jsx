@@ -99,6 +99,55 @@ function buildAutomationTask({ title, contactName, channel, dueAt, source, messa
   };
 }
 
+function getPatientReviewStatusFromAppointment(status) {
+  if (status === "completed") {
+    return "pending";
+  }
+
+  if (status === "cancelled") {
+    return "cancelled";
+  }
+
+  if (status === "no_show") {
+    return "no_show";
+  }
+
+  return "awaiting_visit";
+}
+
+function upsertPatientFromAppointment(currentPatients, appointment) {
+  const matchingPatient = currentPatients.find(
+    (patient) => patient.name === appointment.name && patient.phone === appointment.mobile
+  );
+
+  const nextPatient = {
+    id: matchingPatient?.id ?? Date.now() + 1,
+    name: appointment.name,
+    visitDate: appointment.appointmentDate,
+    reviewStatus: getPatientReviewStatusFromAppointment(appointment.status),
+    feedbackStatus: matchingPatient?.feedbackStatus ?? "unknown",
+    phone: appointment.mobile,
+    email: matchingPatient?.email ?? "",
+    nextFollowUp: matchingPatient?.nextFollowUp ?? appointment.appointmentDate
+  };
+
+  if (!matchingPatient) {
+    return [nextPatient, ...currentPatients];
+  }
+
+  return currentPatients.map((patient) => (patient.id === matchingPatient.id ? nextPatient : patient));
+}
+
+function hasReviewRequestTask(currentTasks, appointment) {
+  return currentTasks.some(
+    (task) =>
+      task.source === "appointment" &&
+      task.title === "Post-visit review request" &&
+      task.contactName === appointment.name &&
+      task.dueAt === `${appointment.appointmentDate} 19:00`
+  );
+}
+
 function normalizeRemoteState(remoteState, session) {
   const blankClinic = createBlankClinic(getOwnerFromSession(session));
 
@@ -451,22 +500,6 @@ function App() {
     setNotice("Exported a fresh JSON snapshot of the clinic workspace.");
   }
 
-  function addPatient(patient) {
-    setPatients((currentPatients) => [{ id: Date.now(), ...patient }, ...currentPatients]);
-    setAutomationTasks((currentTasks) => [
-      buildAutomationTask({
-        title: "First review request",
-        contactName: patient.name,
-        channel: patient.phone ? "whatsapp" : patient.email ? "email" : "manual",
-        dueAt: `${patient.nextFollowUp || patient.visitDate} 11:00`,
-        source: "patient",
-        message: "Send the first review request after the visit."
-      }),
-      ...currentTasks
-    ]);
-    setNotice(`Added ${patient.name} to the review request list.`);
-  }
-
   function addCampaign(campaign) {
     setCampaigns((currentCampaigns) => [{ id: Date.now(), ...campaign }, ...currentCampaigns]);
     setNotice(`Created the "${campaign.name}" campaign.`);
@@ -490,43 +523,26 @@ function App() {
 
   function addAppointment(appointment) {
     setAppointments((currentAppointments) => [{ id: Date.now(), ...appointment }, ...currentAppointments]);
+    setPatients((currentPatients) => upsertPatientFromAppointment(currentPatients, appointment));
 
     if (appointment.status === "completed") {
-      setPatients((currentPatients) => {
-        const alreadyTracked = currentPatients.some(
-          (patient) => patient.name === appointment.name && patient.phone === appointment.mobile
-        );
-
-        if (alreadyTracked) {
-          return currentPatients;
+      setAutomationTasks((currentTasks) => {
+        if (hasReviewRequestTask(currentTasks, appointment)) {
+          return currentTasks;
         }
 
         return [
-          {
-            id: Date.now() + 1,
-            name: appointment.name,
-            visitDate: appointment.appointmentDate,
-            reviewStatus: "pending",
-            feedbackStatus: "unknown",
-            phone: appointment.mobile,
-            email: "",
-            nextFollowUp: appointment.appointmentDate
-          },
-          ...currentPatients
+          buildAutomationTask({
+            title: "Post-visit review request",
+            contactName: appointment.name,
+            channel: appointment.mobile ? "whatsapp" : "manual",
+            dueAt: `${appointment.appointmentDate} 19:00`,
+            source: "appointment",
+            message: "Send a review request after the completed clinic visit."
+          }),
+          ...currentTasks
         ];
       });
-
-      setAutomationTasks((currentTasks) => [
-        buildAutomationTask({
-          title: "Post-visit review request",
-          contactName: appointment.name,
-          channel: appointment.mobile ? "whatsapp" : "manual",
-          dueAt: `${appointment.appointmentDate} 19:00`,
-          source: "appointment",
-          message: "Send a review request after the completed clinic visit."
-        }),
-        ...currentTasks
-      ]);
     }
 
     setNotice(`Added appointment for ${appointment.name}.`);
@@ -603,42 +619,29 @@ function App() {
     }
 
     if (updatedAppointment.status === "completed") {
-      setPatients((currentPatients) => {
-        const alreadyTracked = currentPatients.some(
-          (patient) =>
-            patient.name === updatedAppointment.name && patient.phone === updatedAppointment.mobile
-        );
+      setPatients((currentPatients) => upsertPatientFromAppointment(currentPatients, updatedAppointment));
 
-        if (alreadyTracked) {
-          return currentPatients;
+      setAutomationTasks((currentTasks) => {
+        if (hasReviewRequestTask(currentTasks, updatedAppointment)) {
+          return currentTasks;
         }
 
         return [
-          {
-            id: Date.now() + 2,
-            name: updatedAppointment.name,
-            visitDate: updatedAppointment.appointmentDate,
-            reviewStatus: "pending",
-            feedbackStatus: "unknown",
-            phone: updatedAppointment.mobile,
-            email: "",
-            nextFollowUp: updatedAppointment.appointmentDate
-          },
-          ...currentPatients
+          buildAutomationTask({
+            title: "Post-visit review request",
+            contactName: updatedAppointment.name,
+            channel: updatedAppointment.mobile ? "whatsapp" : "manual",
+            dueAt: `${updatedAppointment.appointmentDate} 19:00`,
+            source: "appointment",
+            message: "Send a review request after the completed clinic visit."
+          }),
+          ...currentTasks
         ];
       });
+    }
 
-      setAutomationTasks((currentTasks) => [
-        buildAutomationTask({
-          title: "Post-visit review request",
-          contactName: updatedAppointment.name,
-          channel: updatedAppointment.mobile ? "whatsapp" : "manual",
-          dueAt: `${updatedAppointment.appointmentDate} 19:00`,
-          source: "appointment",
-          message: "Send a review request after the completed clinic visit."
-        }),
-        ...currentTasks
-      ]);
+    if (updatedAppointment.status !== "completed") {
+      setPatients((currentPatients) => upsertPatientFromAppointment(currentPatients, updatedAppointment));
     }
 
     setNotice(`Appointment status moved to ${updatedAppointment.status}.`);
@@ -800,9 +803,9 @@ function App() {
         )}
         {activeView === "Patients" && (
           <PatientsView
-            addPatient={addPatient}
             patients={patients}
             schedulePatientFollowUp={schedulePatientFollowUp}
+            setActiveView={setActiveView}
             setPatients={setPatients}
           />
         )}
@@ -1282,37 +1285,7 @@ function ReviewsView({ regenerateDraft, reviews, updateReview }) {
   );
 }
 
-function PatientsView({ addPatient, patients, schedulePatientFollowUp, setPatients }) {
-  const [form, setForm] = useState({
-    name: "",
-    visitDate: new Date().toISOString().slice(0, 10),
-    reviewStatus: "pending",
-    feedbackStatus: "unknown",
-    phone: "",
-    email: "",
-    nextFollowUp: new Date().toISOString().slice(0, 10)
-  });
-
-  function handleSubmit(event) {
-    event.preventDefault();
-
-    if (!form.name.trim()) {
-      return;
-    }
-
-    addPatient({
-      ...form,
-      name: form.name.trim()
-    });
-
-    setForm((currentForm) => ({
-      ...currentForm,
-      name: "",
-      phone: "",
-      email: ""
-    }));
-  }
-
+function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPatients }) {
   function queueSingleRequest(patientId) {
     setPatients((currentPatients) =>
       currentPatients.map((patient) =>
@@ -1330,61 +1303,15 @@ function PatientsView({ addPatient, patients, schedulePatientFollowUp, setPatien
         </div>
       </div>
 
-      <form className="inline-form patients-form" onSubmit={handleSubmit}>
-        <input
-          onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
-          placeholder="Patient name"
-          value={form.name}
-        />
-        <input
-          onChange={(event) =>
-            setForm((currentForm) => ({ ...currentForm, visitDate: event.target.value }))
-          }
-          type="date"
-          value={form.visitDate}
-        />
-        <select
-          onChange={(event) =>
-            setForm((currentForm) => ({ ...currentForm, reviewStatus: event.target.value }))
-          }
-          value={form.reviewStatus}
-        >
-          <option value="pending">pending</option>
-          <option value="sent">sent</option>
-          <option value="clicked">clicked</option>
-          <option value="private_feedback">private_feedback</option>
-        </select>
-        <select
-          onChange={(event) =>
-            setForm((currentForm) => ({ ...currentForm, feedbackStatus: event.target.value }))
-          }
-          value={form.feedbackStatus}
-        >
-          <option value="unknown">unknown</option>
-          <option value="happy">happy</option>
-          <option value="needs_followup">needs_followup</option>
-        </select>
-        <input
-          onChange={(event) => setForm((currentForm) => ({ ...currentForm, phone: event.target.value }))}
-          placeholder="Phone"
-          value={form.phone}
-        />
-        <input
-          onChange={(event) => setForm((currentForm) => ({ ...currentForm, email: event.target.value }))}
-          placeholder="Email"
-          value={form.email}
-        />
-        <input
-          onChange={(event) =>
-            setForm((currentForm) => ({ ...currentForm, nextFollowUp: event.target.value }))
-          }
-          type="date"
-          value={form.nextFollowUp}
-        />
-        <button className="primary-button small" type="submit">
-          Add patient
+      <div className="flow-hint">
+        <div>
+          <strong>Easy flow:</strong> add the person once in <span>Appointments</span>. ReviewPulse will
+          auto-create the patient follow-up row here.
+        </div>
+        <button className="ghost-button small" onClick={() => setActiveView("Appointments")} type="button">
+          Open appointments
         </button>
-      </form>
+      </div>
 
       <div className="table-card">
         <table>
