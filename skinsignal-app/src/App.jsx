@@ -64,7 +64,12 @@ function ensureClinicId(clinic) {
 }
 
 function isClinicProfileComplete(clinic) {
-  return Boolean(clinic?.name?.trim() && clinic?.city?.trim() && clinic?.owner?.trim());
+  return Boolean(
+    clinic?.name?.trim() &&
+      clinic?.city?.trim() &&
+      clinic?.owner?.trim() &&
+      clinic?.googleReviewLink?.trim()
+  );
 }
 
 function buildReplyDraft(review, clinic) {
@@ -229,6 +234,15 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!session || route === "/app") {
+      return;
+    }
+
+    window.history.replaceState({}, "", "/app");
+    setRoute("/app");
+  }, [route, session]);
 
   useEffect(() => {
     if (!hasSupabaseEnv || !supabase) {
@@ -869,9 +883,9 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
   const [showSwitchAccount, setShowSwitchAccount] = useState(false);
   const plans = [
     {
-      name: "Starter",
-      price: "INR 1,999",
-      detail: "For solo clinics starting review automation",
+      name: "Free",
+      price: "INR 0",
+      detail: "For clinics getting started with appointments and review automation",
       features: ["1 practice workspace", "Appointment + patient tracking", "Basic reports"]
     },
     {
@@ -1151,7 +1165,9 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
     });
   }
 
-  const canContinue = Boolean(form.name?.trim() && form.city?.trim() && form.owner?.trim());
+  const canActivateAutomation = Boolean(
+    form.name?.trim() && form.city?.trim() && form.owner?.trim() && form.googleReviewLink?.trim()
+  );
 
   return (
     <div className="auth-shell">
@@ -1160,7 +1176,7 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
           <p className="eyebrow">Welcome to ReviewPulse</p>
           <h1>Set up your clinic first</h1>
           <p className="muted">
-            Add your clinic details once. Then your team can start using appointments, patients, and review automation.
+            Add your clinic details and Google review link once. Then your team can start using appointments, patients, and review automation.
           </p>
 
           <form className="settings-form setup-form" onSubmit={handleSubmit}>
@@ -1195,6 +1211,7 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
             <label className="settings-wide">
               <span className="settings-label">Google Review Link</span>
               <input
+                required
                 onChange={(event) =>
                   setForm((currentForm) => ({ ...currentForm, googleReviewLink: event.target.value }))
                 }
@@ -1203,7 +1220,7 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
               />
             </label>
             <div className="setup-actions">
-              <button className="primary-button" disabled={!canContinue} type="submit">
+              <button className="primary-button" disabled={!canActivateAutomation} type="submit">
                 Start dashboard
               </button>
               <button className="ghost-button" onClick={handleLogout} type="button">
@@ -1211,6 +1228,11 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
               </button>
             </div>
           </form>
+          {!canActivateAutomation ? (
+            <p className="muted">
+              Add clinic name, city, owner, and your Google review link to activate the dashboard.
+            </p>
+          ) : null}
         </section>
       </div>
     </div>
@@ -1238,7 +1260,7 @@ function DashboardView({
           <p className="eyebrow">Get Started</p>
           <h2>Finish your practice profile</h2>
           <p className="muted">
-            Add your practice name, city, and owner in Settings to activate private Supabase sync for this account.
+            Add your practice name, city, owner, and Google review link in Settings to activate private Supabase sync for this account.
           </p>
           <button className="primary-button small" onClick={() => setActiveView("Settings")} type="button">
             Complete setup
@@ -1813,11 +1835,13 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
 
       <form className="inline-form appointment-form" onSubmit={handleSubmit}>
         <input
+          required
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, name: event.target.value }))}
           placeholder="Patient name"
           value={form.name}
         />
         <input
+          required
           onChange={(event) => setForm((currentForm) => ({ ...currentForm, mobile: event.target.value }))}
           placeholder="Mobile number"
           value={form.mobile}
@@ -1989,7 +2013,7 @@ function SettingsView({ clinic, saveClinic }) {
             onChange={(event) => setForm((currentForm) => ({ ...currentForm, plan: event.target.value }))}
             value={form.plan}
           >
-            <option value="Launch Plan">Launch Plan</option>
+            <option value="Free Plan">Free Plan</option>
             <option value="Growth Plan">Growth Plan</option>
             <option value="Premium Plan">Premium Plan</option>
           </select>
