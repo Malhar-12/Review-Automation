@@ -61,7 +61,11 @@ function mapCampaignFromRow(row) {
     sent: row.sent,
     delivered: row.delivered,
     clicked: row.clicked,
-    status: row.status
+    status: row.status,
+    audience: row.audience ?? "pending_reviews",
+    channel: row.channel ?? "whatsapp",
+    template: row.template ?? "review_request",
+    scheduledFor: row.scheduled_for ?? ""
   };
 }
 
@@ -153,6 +157,10 @@ function mapCampaignToRow(campaign, userId) {
     delivered: campaign.delivered,
     clicked: campaign.clicked,
     status: campaign.status,
+    audience: campaign.audience ?? "pending_reviews",
+    channel: campaign.channel ?? "whatsapp",
+    template: campaign.template ?? "review_request",
+    scheduled_for: campaign.scheduledFor || null,
     updated_at: new Date().toISOString()
   };
 }

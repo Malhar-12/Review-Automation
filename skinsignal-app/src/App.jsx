@@ -116,6 +116,21 @@ function buildReviewRequestMessage(clinic, patientName) {
   return `Hi ${patientName}, thank you for visiting ${practiceName}. Add your Google review link in Settings before sending this request.`;
 }
 
+function buildCampaignMessage({ clinic, patientName, template }) {
+  if (template === "review_reminder") {
+    const practiceName = clinic?.name?.trim() || "our clinic";
+    const reviewLink = clinic?.googleReviewLink?.trim();
+
+    if (reviewLink) {
+      return `Hi ${patientName}, this is a gentle reminder from ${practiceName}. If you have a minute, please share your feedback here: ${reviewLink}`;
+    }
+
+    return `Hi ${patientName}, this is a gentle reminder from ${practiceName}. Add your Google review link in Settings before sending this reminder.`;
+  }
+
+  return buildReviewRequestMessage(clinic, patientName);
+}
+
 function getPatientReviewStatusFromAppointment(status) {
   if (status === "completed") {
     return "pending";
@@ -526,9 +541,77 @@ function App() {
     setNotice("Exported a fresh JSON snapshot of the clinic workspace.");
   }
 
-  function addCampaign(campaign) {
-    setCampaigns((currentCampaigns) => [{ id: Date.now(), ...campaign }, ...currentCampaigns]);
-    setNotice(`Created the "${campaign.name}" campaign.`);
+  function launchCampaign(campaign) {
+    const selectedPatients = patients.filter((patient) => {
+      if (campaign.audience === "pending_reviews") {
+        return patient.reviewStatus === "pending";
+      }
+
+      if (campaign.audience === "sent_not_clicked") {
+        return patient.reviewStatus === "sent";
+      }
+
+      if (campaign.audience === "followup_due") {
+        return Boolean(patient.nextFollowUp);
+      }
+
+      return false;
+    });
+
+    if (!selectedPatients.length) {
+      setNotice("No matching patients found for this campaign audience.");
+      return;
+    }
+
+    const campaignId = Date.now();
+
+    setCampaigns((currentCampaigns) => [
+      {
+        id: campaignId,
+        ...campaign,
+        sent: selectedPatients.length,
+        delivered: 0,
+        clicked: 0,
+        status: "active"
+      },
+      ...currentCampaigns
+    ]);
+
+    setAutomationTasks((currentTasks) => [
+      ...selectedPatients.map((patient) =>
+        buildAutomationTask({
+          title: campaign.template === "review_reminder" ? "Bulk review reminder" : "Bulk review request",
+          contactName: patient.name,
+          channel: campaign.channel,
+          dueAt: `${campaign.scheduledFor} 18:00`,
+          source: "campaign",
+          message: buildCampaignMessage({
+            clinic,
+            patientName: patient.name,
+            template: campaign.template
+          })
+        })
+      ),
+      ...currentTasks
+    ]);
+
+    setPatients((currentPatients) =>
+      currentPatients.map((patient) => {
+        const inAudience = selectedPatients.some((entry) => entry.id === patient.id);
+
+        if (!inAudience) {
+          return patient;
+        }
+
+        if (campaign.template === "review_request" && patient.reviewStatus === "pending") {
+          return { ...patient, reviewStatus: "sent" };
+        }
+
+        return patient;
+      })
+    );
+
+    setNotice(`Launched "${campaign.name}" for ${selectedPatients.length} patient${selectedPatients.length > 1 ? "s" : ""}.`);
   }
 
   function addEnquiry(enquiry) {
@@ -844,7 +927,7 @@ function App() {
           />
         )}
         {activeView === "Campaigns" && (
-          <CampaignsView addCampaign={addCampaign} campaigns={campaigns} />
+          <CampaignsView campaigns={campaigns} launchCampaign={launchCampaign} />
         )}
         {activeView === "Enquiries" && (
           <EnquiriesView
@@ -1506,13 +1589,13 @@ function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPat
   );
 }
 
-function CampaignsView({ addCampaign, campaigns }) {
+function CampaignsView({ campaigns, launchCampaign }) {
   const [form, setForm] = useState({
     name: "",
-    sent: 0,
-    delivered: 0,
-    clicked: 0,
-    status: "draft"
+    audience: "pending_reviews",
+    channel: "whatsapp",
+    template: "review_request",
+    scheduledFor: new Date().toISOString().slice(0, 10)
   });
 
   function handleSubmit(event) {
@@ -1522,20 +1605,17 @@ function CampaignsView({ addCampaign, campaigns }) {
       return;
     }
 
-    addCampaign({
+    launchCampaign({
       ...form,
-      name: form.name.trim(),
-      sent: Number(form.sent),
-      delivered: Number(form.delivered),
-      clicked: Number(form.clicked)
+      name: form.name.trim()
     });
 
     setForm({
       name: "",
-      sent: 0,
-      delivered: 0,
-      clicked: 0,
-      status: "draft"
+      audience: "pending_reviews",
+      channel: "whatsapp",
+      template: "review_request",
+      scheduledFor: new Date().toISOString().slice(0, 10)
     });
   }
 
@@ -1544,7 +1624,13 @@ function CampaignsView({ addCampaign, campaigns }) {
       <div className="panel-head">
         <div>
           <p className="eyebrow">Campaigns</p>
-          <h2>WhatsApp request flows</h2>
+          <h2>Bulk automation launches</h2>
+        </div>
+      </div>
+
+      <div className="flow-hint">
+        <div>
+          <strong>Use campaigns for bulk actions.</strong> Pick a patient audience, choose the channel, and launch review requests or reminders in one go.
         </div>
       </div>
 
@@ -1554,38 +1640,38 @@ function CampaignsView({ addCampaign, campaigns }) {
           placeholder="Campaign name"
           value={form.name}
         />
-        <input
-          min="0"
-          onChange={(event) => setForm((currentForm) => ({ ...currentForm, sent: event.target.value }))}
-          placeholder="Sent"
-          type="number"
-          value={form.sent}
-        />
-        <input
-          min="0"
-          onChange={(event) =>
-            setForm((currentForm) => ({ ...currentForm, delivered: event.target.value }))
-          }
-          placeholder="Delivered"
-          type="number"
-          value={form.delivered}
-        />
-        <input
-          min="0"
-          onChange={(event) => setForm((currentForm) => ({ ...currentForm, clicked: event.target.value }))}
-          placeholder="Clicked"
-          type="number"
-          value={form.clicked}
-        />
         <select
-          onChange={(event) => setForm((currentForm) => ({ ...currentForm, status: event.target.value }))}
-          value={form.status}
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, audience: event.target.value }))}
+          value={form.audience}
         >
-          <option value="draft">draft</option>
-          <option value="active">active</option>
+          <option value="pending_reviews">pending reviews</option>
+          <option value="sent_not_clicked">sent not clicked</option>
+          <option value="followup_due">follow-up due</option>
         </select>
+        <select
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, channel: event.target.value }))}
+          value={form.channel}
+        >
+          <option value="whatsapp">whatsapp</option>
+          <option value="sms">sms</option>
+          <option value="email">email</option>
+        </select>
+        <select
+          onChange={(event) => setForm((currentForm) => ({ ...currentForm, template: event.target.value }))}
+          value={form.template}
+        >
+          <option value="review_request">review request</option>
+          <option value="review_reminder">review reminder</option>
+        </select>
+        <input
+          onChange={(event) =>
+            setForm((currentForm) => ({ ...currentForm, scheduledFor: event.target.value }))
+          }
+          type="date"
+          value={form.scheduledFor}
+        />
         <button className="primary-button small" type="submit">
-          Create campaign
+          Launch campaign
         </button>
       </form>
 
@@ -1598,6 +1684,9 @@ function CampaignsView({ addCampaign, campaigns }) {
                 {campaign.status}
               </span>
             </div>
+            <p className="campaign-meta">
+              {campaign.audience?.replaceAll("_", " ")} • {campaign.channel} • {campaign.template?.replaceAll("_", " ")}
+            </p>
             <div className="campaign-metrics">
               <div>
                 <strong>{campaign.sent}</strong>
@@ -1612,6 +1701,7 @@ function CampaignsView({ addCampaign, campaigns }) {
                 <span>clicked</span>
               </div>
             </div>
+            <p className="campaign-meta">Scheduled for {campaign.scheduledFor || "today"}</p>
           </article>
         ))}
       </div>

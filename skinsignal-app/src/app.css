@@ -809,6 +809,12 @@ th {
   margin: 0;
 }
 
+.campaign-meta {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .flow-hint {
   display: flex;
   justify-content: space-between;

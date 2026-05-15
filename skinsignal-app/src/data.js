@@ -90,8 +90,30 @@ export const patients = [
 ];
 
 export const campaigns = [
-  { id: 1, name: "Post-visit review request", sent: 142, delivered: 91, clicked: 24, status: "active" },
-  { id: 2, name: "Acne program follow-up", sent: 58, delivered: 45, clicked: 10, status: "draft" }
+  {
+    id: 1,
+    name: "Post-visit review request",
+    sent: 142,
+    delivered: 91,
+    clicked: 24,
+    status: "active",
+    audience: "pending_reviews",
+    channel: "whatsapp",
+    template: "review_request",
+    scheduledFor: "2026-05-16"
+  },
+  {
+    id: 2,
+    name: "Review reminder batch",
+    sent: 58,
+    delivered: 45,
+    clicked: 10,
+    status: "draft",
+    audience: "followup_due",
+    channel: "whatsapp",
+    template: "review_reminder",
+    scheduledFor: "2026-05-18"
+  }
 ];
 
 export const enquiries = [

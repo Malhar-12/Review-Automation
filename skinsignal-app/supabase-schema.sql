@@ -44,6 +44,10 @@ create table if not exists campaigns (
   delivered integer not null default 0,
   clicked integer not null default 0,
   status text not null,
+  audience text not null default 'pending_reviews',
+  channel text not null default 'whatsapp',
+  template text not null default 'review_request',
+  scheduled_for date,
   updated_at timestamptz not null default now()
 );
 
@@ -163,6 +167,10 @@ alter table patients alter column review_status set not null;
 alter table patients alter column feedback_status set not null;
 
 alter table campaigns add column if not exists user_id uuid references auth.users (id) on delete cascade;
+alter table campaigns add column if not exists audience text not null default 'pending_reviews';
+alter table campaigns add column if not exists channel text not null default 'whatsapp';
+alter table campaigns add column if not exists template text not null default 'review_request';
+alter table campaigns add column if not exists scheduled_for date;
 alter table campaigns add column if not exists updated_at timestamptz not null default now();
 
 alter table enquiries add column if not exists user_id uuid references auth.users (id) on delete cascade;
