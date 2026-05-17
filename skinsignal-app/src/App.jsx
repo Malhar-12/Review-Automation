@@ -12,7 +12,7 @@ import {
 import { hasSupabaseEnv, supabase } from "./supabase";
 import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState";
 
-const navItems = ["Dashboard", "Appointments", "Patients", "Reviews", "Campaigns", "Automations", "Enquiries", "Settings"];
+const navItems = ["Dashboard", "Appointments", "Patients", "Reviews", "Campaigns", "Automations", "Settings"];
 const storageKey = "reviewpulse-console-state";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
@@ -29,7 +29,7 @@ function createBlankClinic(owner = "Clinic team") {
     id: "default-clinic",
     name: "",
     city: "",
-    plan: "Free Plan",
+    plan: "Starter Plan",
     owner,
     googleReviewLink: ""
   };
@@ -147,13 +147,53 @@ function getPatientReviewStatusFromAppointment(status) {
   return "awaiting_visit";
 }
 
-function upsertPatientFromAppointment(currentPatients, appointment) {
+function isActiveRecord(record) {
+  return !record?.archivedAt;
+}
+
+function nextPatientNumber(currentPatients) {
+  return (
+    currentPatients.reduce((maxValue, patient) => {
+      const value = Number(patient.patientNumber || 0);
+      return Number.isFinite(value) ? Math.max(maxValue, value) : maxValue;
+    }, 0) + 1
+  );
+}
+
+function ensurePatientNumbers(currentPatients) {
+  let runningNumber = currentPatients.reduce((maxValue, patient) => {
+    const value = Number(patient.patientNumber || 0);
+    return Number.isFinite(value) ? Math.max(maxValue, value) : maxValue;
+  }, 0);
+
+  let changed = false;
+
+  const nextPatients = currentPatients.map((patient) => {
+    if (patient.patientNumber) {
+      return patient;
+    }
+
+    changed = true;
+    runningNumber += 1;
+    return { ...patient, patientNumber: runningNumber };
+  });
+
+  return changed ? nextPatients : currentPatients;
+}
+
+function upsertPatientFromAppointment(currentPatients, appointment, previousAppointment = null) {
   const matchingPatient = currentPatients.find(
-    (patient) => patient.name === appointment.name && patient.phone === appointment.mobile
+    (patient) =>
+      isActiveRecord(patient) &&
+      ((patient.name === appointment.name && patient.phone === appointment.mobile) ||
+        (previousAppointment &&
+          patient.name === previousAppointment.name &&
+          patient.phone === previousAppointment.mobile))
   );
 
   const nextPatient = {
     id: matchingPatient?.id ?? Date.now() + 1,
+    patientNumber: matchingPatient?.patientNumber ?? nextPatientNumber(currentPatients),
     name: appointment.name,
     visitDate: appointment.appointmentDate,
     reviewStatus: getPatientReviewStatusFromAppointment(appointment.status),
@@ -170,9 +210,77 @@ function upsertPatientFromAppointment(currentPatients, appointment) {
   return currentPatients.map((patient) => (patient.id === matchingPatient.id ? nextPatient : patient));
 }
 
+function syncPatientsFromAppointments(currentPatients, appointments) {
+  let nextPatients = ensurePatientNumbers(currentPatients);
+
+  appointments.forEach((appointment) => {
+    nextPatients = upsertPatientFromAppointment(nextPatients, appointment);
+  });
+
+  return nextPatients;
+}
+
+function samePatientsState(leftPatients, rightPatients) {
+  if (leftPatients.length !== rightPatients.length) {
+    return false;
+  }
+
+  return leftPatients.every((patient, index) => {
+    const otherPatient = rightPatients[index];
+
+    return (
+      patient.id === otherPatient.id &&
+      patient.patientNumber === otherPatient.patientNumber &&
+      patient.name === otherPatient.name &&
+      patient.visitDate === otherPatient.visitDate &&
+      patient.reviewStatus === otherPatient.reviewStatus &&
+      patient.feedbackStatus === otherPatient.feedbackStatus &&
+      patient.phone === otherPatient.phone &&
+      patient.email === otherPatient.email &&
+      patient.nextFollowUp === otherPatient.nextFollowUp &&
+      patient.archivedAt === otherPatient.archivedAt
+    );
+  });
+}
+
+function buildDailySerialLookup(appointments) {
+  const groupedAppointments = appointments.reduce((lookup, appointment) => {
+    const key = appointment.appointmentDate || "no-date";
+    lookup[key] = lookup[key] ?? [];
+    lookup[key].push(appointment);
+    return lookup;
+  }, {});
+
+  return Object.values(groupedAppointments).reduce((serialLookup, groupedRows) => {
+    const sortedRows = [...groupedRows].sort((leftRow, rightRow) => {
+      if (leftRow.appointmentDate !== rightRow.appointmentDate) {
+        return String(leftRow.appointmentDate).localeCompare(String(rightRow.appointmentDate));
+      }
+
+      return Number(leftRow.id) - Number(rightRow.id);
+    });
+
+    sortedRows.forEach((appointment, index) => {
+      serialLookup[appointment.id] = index + 1;
+    });
+
+    return serialLookup;
+  }, {});
+}
+
+function getNextDailySerial(appointments, appointmentDate, editingId = null) {
+  const sameDayAppointments = appointments.filter(
+    (appointment) =>
+      appointment.appointmentDate === appointmentDate && appointment.id !== editingId
+  );
+
+  return sameDayAppointments.length + 1;
+}
+
 function hasReviewRequestTask(currentTasks, appointment) {
   return currentTasks.some(
     (task) =>
+      isActiveRecord(task) &&
       task.source === "appointment" &&
       task.title === "Post-visit review request" &&
       task.contactName === appointment.name &&
@@ -212,6 +320,26 @@ function App() {
   const [automationTasks, setAutomationTasks] = useState(
     storedState?.automationTasks ?? initialAutomationTasks
   );
+  const visiblePatients = useMemo(
+    () => patients.filter((patient) => isActiveRecord(patient)),
+    [patients]
+  );
+  const visibleCampaigns = useMemo(
+    () => campaigns.filter((campaign) => isActiveRecord(campaign)),
+    [campaigns]
+  );
+  const visibleEnquiries = useMemo(
+    () => enquiries.filter((enquiry) => isActiveRecord(enquiry)),
+    [enquiries]
+  );
+  const visibleAppointments = useMemo(
+    () => appointments.filter((appointment) => isActiveRecord(appointment)),
+    [appointments]
+  );
+  const visibleAutomationTasks = useMemo(
+    () => automationTasks.filter((task) => isActiveRecord(task)),
+    [automationTasks]
+  );
   const remoteReadyRef = useRef(false);
   const hasLoadedRemoteRef = useRef(false);
   const clinicIsComplete = isClinicProfileComplete(clinic);
@@ -224,21 +352,21 @@ function App() {
       },
       {
         label: "Requests waiting",
-        value: patients.filter((patient) => patient.reviewStatus === "pending").length,
-        detail: `${patients.filter((patient) => patient.reviewStatus === "sent").length} already queued`
+        value: visiblePatients.filter((patient) => patient.reviewStatus === "pending").length,
+        detail: `${visiblePatients.filter((patient) => patient.reviewStatus === "sent").length} already queued`
       },
       {
         label: "Active campaigns",
-        value: campaigns.filter((campaign) => campaign.status === "active").length,
-        detail: `${campaigns.length} total campaign flows`
+        value: visibleCampaigns.filter((campaign) => campaign.status === "active").length,
+        detail: `${visibleCampaigns.length} total campaign flows`
       },
       {
         label: "Follow-ups due",
-        value: automationTasks.filter((task) => task.status === "scheduled").length,
-        detail: `${enquiries.filter((entry) => entry.status === "booked").length} already booked`
+        value: visibleAutomationTasks.filter((task) => task.status === "scheduled").length,
+        detail: `${visibleAppointments.filter((entry) => entry.status === "completed").length} visits completed`
       }
     ],
-    [automationTasks, campaigns, enquiries, patients, reviews]
+    [reviews, visibleAutomationTasks, visibleCampaigns, visiblePatients, visibleAppointments]
   );
 
   useEffect(() => {
@@ -258,6 +386,19 @@ function App() {
     window.history.replaceState({}, "", "/app");
     setRoute("/app");
   }, [route, session]);
+
+  useEffect(() => {
+    if (!navItems.includes(activeView)) {
+      setActiveView("Dashboard");
+    }
+  }, [activeView]);
+
+  useEffect(() => {
+    setPatients((currentPatients) => {
+      const syncedPatients = syncPatientsFromAppointments(currentPatients, visibleAppointments);
+      return samePatientsState(currentPatients, syncedPatients) ? currentPatients : syncedPatients;
+    });
+  }, [visibleAppointments]);
 
   useEffect(() => {
     if (!hasSupabaseEnv || !supabase) {
@@ -406,8 +547,8 @@ function App() {
     const ratingTotal = reviews.reduce((sum, review) => sum + review.rating, 0);
     const averageRating = reviews.length ? (ratingTotal / reviews.length).toFixed(1) : "0.0";
     const pendingReplies = reviews.filter((review) => review.status !== "approved").length;
-    const sentRequests = patients.filter((patient) => patient.reviewStatus !== "pending").length;
-    const completedAppointments = appointments.filter((appointment) => appointment.status === "completed").length;
+    const sentRequests = visiblePatients.filter((patient) => patient.reviewStatus !== "pending").length;
+    const completedAppointments = visibleAppointments.filter((appointment) => appointment.status === "completed").length;
 
     return [
       {
@@ -418,7 +559,7 @@ function App() {
       {
         label: "Review Requests Sent",
         value: String(sentRequests),
-        detail: `${patients.length - sentRequests} patients still pending outreach`
+        detail: `${visiblePatients.length - sentRequests} patients still pending outreach`
       },
       {
         label: "Pending Replies",
@@ -428,11 +569,11 @@ function App() {
       {
         label: "Completed Visits",
         value: String(completedAppointments),
-        detail: `${appointments.filter((appointment) => appointment.status === "booked").length} appointments currently booked`,
+        detail: `${visibleAppointments.filter((appointment) => appointment.status === "booked").length} appointments currently booked`,
         accent: true
       }
     ];
-  }, [appointments, patients, reviews]);
+  }, [reviews, visibleAppointments, visiblePatients]);
 
   useEffect(() => {
     if (!notice) {
@@ -542,7 +683,7 @@ function App() {
   }
 
   function launchCampaign(campaign) {
-    const selectedPatients = patients.filter((patient) => {
+    const selectedPatients = visiblePatients.filter((patient) => {
       if (campaign.audience === "pending_reviews") {
         return patient.reviewStatus === "pending";
       }
@@ -597,6 +738,10 @@ function App() {
 
     setPatients((currentPatients) =>
       currentPatients.map((patient) => {
+        if (!isActiveRecord(patient)) {
+          return patient;
+        }
+
         const inAudience = selectedPatients.some((entry) => entry.id === patient.id);
 
         if (!inAudience) {
@@ -612,6 +757,17 @@ function App() {
     );
 
     setNotice(`Launched "${campaign.name}" for ${selectedPatients.length} patient${selectedPatients.length > 1 ? "s" : ""}.`);
+  }
+
+  function archiveCampaign(campaignId) {
+    setCampaigns((currentCampaigns) =>
+      currentCampaigns.map((campaign) =>
+        campaign.id === campaignId
+          ? { ...campaign, status: "archived", archivedAt: new Date().toISOString() }
+          : campaign
+      )
+    );
+    setNotice("Campaign archived from the active bulk workflow list.");
   }
 
   function addEnquiry(enquiry) {
@@ -657,8 +813,60 @@ function App() {
     setNotice(`Added appointment for ${appointment.name}.`);
   }
 
+  function updateAppointment(appointmentId, updates) {
+    const existingAppointment = appointments.find((appointment) => appointment.id === appointmentId);
+
+    if (!existingAppointment) {
+      return;
+    }
+
+    const updatedAppointment = { ...existingAppointment, ...updates };
+
+    setAppointments((currentAppointments) =>
+      currentAppointments.map((appointment) =>
+        appointment.id === appointmentId ? updatedAppointment : appointment
+      )
+    );
+    setPatients((currentPatients) =>
+      upsertPatientFromAppointment(currentPatients, updatedAppointment, existingAppointment)
+    );
+
+    if (updatedAppointment.status === "completed") {
+      setAutomationTasks((currentTasks) => {
+        if (hasReviewRequestTask(currentTasks, updatedAppointment)) {
+          return currentTasks;
+        }
+
+        return [
+          buildAutomationTask({
+            title: "Post-visit review request",
+            contactName: updatedAppointment.name,
+            channel: updatedAppointment.mobile ? "whatsapp" : "manual",
+            dueAt: `${updatedAppointment.appointmentDate} 19:00`,
+            source: "appointment",
+            message: buildReviewRequestMessage(clinic, updatedAppointment.name)
+          }),
+          ...currentTasks
+        ];
+      });
+    }
+
+    setNotice(`Updated appointment for ${updatedAppointment.name}.`);
+  }
+
+  function archiveAppointment(appointmentId) {
+    setAppointments((currentAppointments) =>
+      currentAppointments.map((appointment) =>
+        appointment.id === appointmentId
+          ? { ...appointment, archivedAt: new Date().toISOString() }
+          : appointment
+      )
+    );
+    setNotice("Appointment archived.");
+  }
+
   function schedulePatientFollowUp(patientId) {
-    const patient = patients.find((entry) => entry.id === patientId);
+    const patient = visiblePatients.find((entry) => entry.id === patientId);
 
     if (!patient) {
       return;
@@ -678,8 +886,51 @@ function App() {
     setNotice(`Scheduled a follow-up for ${patient.name}.`);
   }
 
+  function queuePatientReviewRequest(patientId) {
+    const patient = visiblePatients.find((entry) => entry.id === patientId);
+
+    if (!patient) {
+      return;
+    }
+
+    setPatients((currentPatients) =>
+      currentPatients.map((entry) =>
+        entry.id === patientId ? { ...entry, reviewStatus: "sent" } : entry
+      )
+    );
+
+    setAutomationTasks((currentTasks) => {
+      const alreadyQueued = currentTasks.some(
+        (task) =>
+          isActiveRecord(task) &&
+          task.source === "patient" &&
+          task.title === "Manual review request" &&
+          task.contactName === patient.name &&
+          task.dueAt === `${patient.nextFollowUp || patient.visitDate} 18:00`
+      );
+
+      if (alreadyQueued) {
+        return currentTasks;
+      }
+
+      return [
+        buildAutomationTask({
+          title: "Manual review request",
+          contactName: patient.name,
+          channel: patient.phone ? "whatsapp" : patient.email ? "email" : "manual",
+          dueAt: `${patient.nextFollowUp || patient.visitDate} 18:00`,
+          source: "patient",
+          message: buildReviewRequestMessage(clinic, patient.name)
+        }),
+        ...currentTasks
+      ];
+    });
+
+    setNotice(`Queued a review request for ${patient.name}.`);
+  }
+
   function scheduleEnquiryFollowUp(enquiryId) {
-    const enquiry = enquiries.find((entry) => entry.id === enquiryId);
+    const enquiry = visibleEnquiries.find((entry) => entry.id === enquiryId);
 
     if (!enquiry) {
       return;
@@ -704,6 +955,37 @@ function App() {
       currentTasks.map((task) => (task.id === taskId ? { ...task, status: "done" } : task))
     );
     setNotice("Automation task marked complete.");
+  }
+
+  function archiveAutomationTask(taskId) {
+    setAutomationTasks((currentTasks) =>
+      currentTasks.map((task) =>
+        task.id === taskId ? { ...task, archivedAt: new Date().toISOString(), status: "archived" } : task
+      )
+    );
+    setNotice("Automation task archived.");
+  }
+
+  function archivePatient(patientId) {
+    const patient = visiblePatients.find((entry) => entry.id === patientId);
+
+    setPatients((currentPatients) =>
+      currentPatients.map((entry) =>
+        entry.id === patientId ? { ...entry, archivedAt: new Date().toISOString() } : entry
+      )
+    );
+
+    if (patient) {
+      setAutomationTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.contactName === patient.name
+            ? { ...task, archivedAt: new Date().toISOString(), status: "archived" }
+            : task
+        )
+      );
+    }
+
+    setNotice("Patient archived from the active follow-up list.");
   }
 
   function advanceAppointmentStatus(appointmentId) {
@@ -901,13 +1183,13 @@ function App() {
 
         {activeView === "Dashboard" && (
           <DashboardView
-            appointments={appointments}
+            appointments={visibleAppointments}
             automationStats={automationStats}
-            automationTasks={automationTasks}
-            campaigns={campaigns}
+            automationTasks={visibleAutomationTasks}
+            campaigns={visibleCampaigns}
             clinicIsComplete={clinicIsComplete}
-            enquiries={enquiries}
             feedbackItems={feedbackItems}
+            patients={visiblePatients}
             reviews={reviews}
             regenerateDraft={regenerateDraft}
             setActiveView={setActiveView}
@@ -920,34 +1202,35 @@ function App() {
         )}
         {activeView === "Patients" && (
           <PatientsView
-            patients={patients}
+            archivePatient={archivePatient}
+            patients={visiblePatients}
+            queuePatientReviewRequest={queuePatientReviewRequest}
             schedulePatientFollowUp={schedulePatientFollowUp}
             setActiveView={setActiveView}
             setPatients={setPatients}
           />
         )}
         {activeView === "Campaigns" && (
-          <CampaignsView campaigns={campaigns} launchCampaign={launchCampaign} />
-        )}
-        {activeView === "Enquiries" && (
-          <EnquiriesView
-            addEnquiry={addEnquiry}
-            enquiries={enquiries}
-            scheduleEnquiryFollowUp={scheduleEnquiryFollowUp}
-            setEnquiries={setEnquiries}
+          <CampaignsView
+            archiveCampaign={archiveCampaign}
+            campaigns={visibleCampaigns}
+            launchCampaign={launchCampaign}
           />
         )}
         {activeView === "Appointments" && (
           <AppointmentsView
             addAppointment={addAppointment}
-            appointments={appointments}
+            appointments={visibleAppointments}
             advanceAppointmentStatus={advanceAppointmentStatus}
+            archiveAppointment={archiveAppointment}
             clinic={clinic}
+            updateAppointment={updateAppointment}
           />
         )}
         {activeView === "Automations" && (
           <AutomationsView
-            automationTasks={automationTasks}
+            archiveAutomationTask={archiveAutomationTask}
+            automationTasks={visibleAutomationTasks}
             completeAutomationTask={completeAutomationTask}
           />
         )}
@@ -966,21 +1249,24 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
   const [showSwitchAccount, setShowSwitchAccount] = useState(false);
   const plans = [
     {
-      name: "Free",
+      name: "Starter",
       price: "INR 0",
-      detail: "For clinics getting started with appointments and review automation",
-      features: ["1 practice workspace", "Appointment + patient tracking", "Basic reports"]
+      suffix: "/1st month",
+      detail: "Free for 1 month, then INR 1,999/month for solo clinics starting review automation.",
+      features: ["1 practice workspace", "Appointments + patient tracking", "Review requests", "Basic reports"]
     },
     {
       name: "Growth",
-      price: "INR 4,999",
+      price: "INR 3,999",
+      suffix: "/month",
       detail: "For growing teams that need follow-up workflows",
-      features: ["Everything in Free", "Automations tab", "Review workflow + exports"],
+      features: ["Everything in Starter", "Automations tab", "Review workflow + exports"],
       featured: true
     },
     {
       name: "Pro",
-      price: "INR 9,999",
+      price: "INR 7,999",
+      suffix: "/month",
       detail: "For high-volume clinics and specialty groups",
       features: ["Everything in Growth", "Priority support", "Future multi-user controls"]
     }
@@ -1123,7 +1409,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
               <div className="signed-in-panel">
                 <div className="signed-in-badge">{session.user?.email}</div>
                 <button className="primary-button" onClick={openDashboard} type="button">
-                  {clinicIsComplete ? "Open dashboard" : "Continue setup"}
+                  {clinicIsComplete ? "Go to workspace" : "Continue setup"}
                 </button>
                 <button
                   className="ghost-button auth-submit"
@@ -1198,8 +1484,8 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
               <p>Review incoming feedback, regenerate drafts, and approve responses faster.</p>
             </article>
             <article className="public-feature-card">
-              <h3>Enquiry follow-up</h3>
-              <p>Capture new leads, choose channels, and schedule the next action from one dashboard.</p>
+              <h3>Visit automation</h3>
+              <p>Move from booked appointment to patient follow-up and review reminders without re-entering data.</p>
             </article>
           </div>
         </section>
@@ -1213,7 +1499,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
             {plans.map((plan) => (
               <article key={plan.name} className={`public-price-card ${plan.featured ? "featured" : ""}`}>
                 <p className="price-plan">{plan.name}</p>
-                <strong className="public-price-value">{plan.price}<span>/month</span></strong>
+                <strong className="public-price-value">{plan.price}<span>{plan.suffix || "/month"}</span></strong>
                 <p className="muted">{plan.detail}</p>
                 <ul className="public-price-list">
                   {plan.features.map((feature) => (
@@ -1244,7 +1530,7 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
       city: form.city.trim(),
       owner: form.owner.trim(),
       googleReviewLink: form.googleReviewLink?.trim() || "",
-      plan: form.plan || "Free Plan"
+      plan: form.plan || "Starter Plan"
     });
   }
 
@@ -1289,7 +1575,7 @@ function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
             </label>
             <label>
               <span className="settings-label">Plan</span>
-              <input disabled value={form.plan || "Free Plan"} />
+                <input disabled value={form.plan || "Starter Plan"} />
             </label>
             <label className="settings-wide">
               <span className="settings-label">Google Review Link</span>
@@ -1328,8 +1614,8 @@ function DashboardView({
   appointments,
   campaigns,
   clinicIsComplete,
-  enquiries,
   feedbackItems,
+  patients,
   regenerateDraft,
   reviews,
   setActiveView,
@@ -1431,12 +1717,14 @@ function DashboardView({
           <section className="panel">
             <div className="panel-head">
               <div>
-                <p className="eyebrow">Private Feedback</p>
-                <h2>Needs attention</h2>
+                <p className="eyebrow">Patients</p>
+                <h2>Review pipeline</h2>
               </div>
-              <span className="status-pill warm">{feedbackItems.length} open</span>
+              <span className="status-pill cool">
+                {patients.filter((patient) => patient.reviewStatus === "pending").length} pending
+              </span>
             </div>
-            <SimpleList items={feedbackItems} titleKey="title" detailKey="submittedAt" />
+            <SimpleList items={patients.slice(0, 3)} titleKey="name" detailKey="reviewStatus" />
           </section>
 
           <section className="panel">
@@ -1450,19 +1738,6 @@ function DashboardView({
               </span>
             </div>
             <SimpleList items={appointments.slice(0, 3)} titleKey="name" detailKey="doctor" />
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <div>
-                <p className="eyebrow">Enquiries</p>
-                <h2>Lead tracker</h2>
-              </div>
-              <span className="status-pill cool">
-                {enquiries.filter((entry) => entry.status === "booked").length} booked
-              </span>
-            </div>
-            <SimpleList items={enquiries} titleKey="name" detailKey="note" />
           </section>
         </div>
       </section>
@@ -1513,15 +1788,13 @@ function ReviewsView({ regenerateDraft, reviews, updateReview }) {
   );
 }
 
-function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPatients }) {
-  function queueSingleRequest(patientId) {
-    setPatients((currentPatients) =>
-      currentPatients.map((patient) =>
-        patient.id === patientId ? { ...patient, reviewStatus: "sent" } : patient
-      )
-    );
-  }
-
+function PatientsView({
+  archivePatient,
+  patients,
+  queuePatientReviewRequest,
+  schedulePatientFollowUp,
+  setActiveView
+}) {
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -1529,6 +1802,7 @@ function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPat
           <p className="eyebrow">Patients</p>
           <h2>Review request list</h2>
         </div>
+        <span className="status-pill cool">{patients.length} total patients in history</span>
       </div>
 
       <div className="flow-hint">
@@ -1545,6 +1819,7 @@ function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPat
         <table>
           <thead>
             <tr>
+              <th>Patient No.</th>
               <th>Name</th>
               <th>Visit Date</th>
               <th>Review Status</th>
@@ -1557,6 +1832,7 @@ function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPat
           <tbody>
             {patients.map((patient) => (
               <tr key={patient.id}>
+                <td>{patient.patientNumber || "-"}</td>
                 <td>{patient.name}</td>
                 <td>{patient.visitDate}</td>
                 <td><span className="chip">{patient.reviewStatus}</span></td>
@@ -1564,21 +1840,30 @@ function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPat
                 <td>{patient.phone || patient.email || "Missing"}</td>
                 <td>{patient.nextFollowUp || "-"}</td>
                 <td>
-                  <button
-                    className="ghost-button small"
-                    onClick={() => schedulePatientFollowUp(patient.id)}
-                    type="button"
-                  >
-                    Follow-up
-                  </button>
-                  <button
-                    className="ghost-button small"
-                    disabled={patient.reviewStatus === "sent"}
-                    onClick={() => queueSingleRequest(patient.id)}
-                    type="button"
-                  >
-                    {patient.reviewStatus === "sent" ? "Queued" : "Queue request"}
-                  </button>
+                  <div className="table-actions">
+                    <button
+                      className="ghost-button small"
+                      onClick={() => schedulePatientFollowUp(patient.id)}
+                      type="button"
+                    >
+                      Follow-up
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      disabled={patient.reviewStatus === "sent"}
+                      onClick={() => queuePatientReviewRequest(patient.id)}
+                      type="button"
+                    >
+                      {patient.reviewStatus === "sent" ? "Queued" : "Queue request"}
+                    </button>
+                    <button
+                      className="danger-button small"
+                      onClick={() => archivePatient(patient.id)}
+                      type="button"
+                    >
+                      Archive
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1589,7 +1874,7 @@ function PatientsView({ patients, schedulePatientFollowUp, setActiveView, setPat
   );
 }
 
-function CampaignsView({ campaigns, launchCampaign }) {
+function CampaignsView({ archiveCampaign, campaigns, launchCampaign }) {
   const [form, setForm] = useState({
     name: "",
     audience: "pending_reviews",
@@ -1702,6 +1987,15 @@ function CampaignsView({ campaigns, launchCampaign }) {
               </div>
             </div>
             <p className="campaign-meta">Scheduled for {campaign.scheduledFor || "today"}</p>
+            <div className="card-actions">
+              <button
+                className="danger-button small"
+                onClick={() => archiveCampaign(campaign.id)}
+                type="button"
+              >
+                Archive
+              </button>
+            </div>
           </article>
         ))}
       </div>
@@ -1862,7 +2156,15 @@ function EnquiriesView({ addEnquiry, enquiries, scheduleEnquiryFollowUp, setEnqu
   );
 }
 
-function AppointmentsView({ addAppointment, appointments, advanceAppointmentStatus, clinic }) {
+function AppointmentsView({
+  addAppointment,
+  appointments,
+  advanceAppointmentStatus,
+  archiveAppointment,
+  clinic,
+  updateAppointment
+}) {
+  const serialLookup = useMemo(() => buildDailySerialLookup(appointments), [appointments]);
   const [form, setForm] = useState({
     name: "",
     mobile: "",
@@ -1871,6 +2173,7 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
     appointmentDate: new Date().toISOString().slice(0, 10),
     status: "booked"
   });
+  const [editingId, setEditingId] = useState(null);
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
@@ -1879,6 +2182,11 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
       city: currentForm.city || clinic?.city || ""
     }));
   }, [clinic?.city]);
+
+  const nextDailySerial = useMemo(
+    () => getNextDailySerial(appointments, form.appointmentDate, editingId),
+    [appointments, editingId, form.appointmentDate]
+  );
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -1890,13 +2198,19 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
 
     setFormError("");
 
-    addAppointment({
+    const nextAppointment = {
       ...form,
       name: form.name.trim(),
       mobile: form.mobile.trim(),
       city: form.city.trim() || clinic?.city || "Not set",
       doctor: form.doctor.trim() || clinic?.owner || "General doctor"
-    });
+    };
+
+    if (editingId) {
+      updateAppointment(editingId, nextAppointment);
+    } else {
+      addAppointment(nextAppointment);
+    }
 
     setForm({
       name: "",
@@ -1906,6 +2220,33 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
       appointmentDate: new Date().toISOString().slice(0, 10),
       status: "booked"
     });
+    setEditingId(null);
+  }
+
+  function startEditing(appointment) {
+    setEditingId(appointment.id);
+    setForm({
+      name: appointment.name,
+      mobile: appointment.mobile,
+      city: appointment.city,
+      doctor: appointment.doctor,
+      appointmentDate: appointment.appointmentDate,
+      status: appointment.status
+    });
+    setFormError("");
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setForm({
+      name: "",
+      mobile: "",
+      city: clinic?.city || "",
+      doctor: "",
+      appointmentDate: new Date().toISOString().slice(0, 10),
+      status: "booked"
+    });
+    setFormError("");
   }
 
   return (
@@ -1920,6 +2261,9 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
       <div className="flow-hint">
         <div>
           <strong>Main receptionist flow:</strong> add appointment here first. Patients and review follow-ups will be created automatically from this step.
+        </div>
+        <div className="flow-meta">
+          <strong>Next serial:</strong> {nextDailySerial} for {form.appointmentDate}
         </div>
       </div>
 
@@ -1964,8 +2308,13 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
           <option value="no_show">no_show</option>
         </select>
         <button className="primary-button small" type="submit">
-          Add appointment
+          {editingId ? "Save changes" : "Add appointment"}
         </button>
+        {editingId ? (
+          <button className="ghost-button small" onClick={resetForm} type="button">
+            Cancel edit
+          </button>
+        ) : null}
       </form>
 
       {formError ? <div className="auth-error inline-error">{formError}</div> : null}
@@ -1974,6 +2323,7 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
         <table>
           <thead>
             <tr>
+              <th>Serial</th>
               <th>Name</th>
               <th>Mobile</th>
               <th>City</th>
@@ -1986,6 +2336,7 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
           <tbody>
             {appointments.map((appointment) => (
               <tr key={appointment.id}>
+                <td>{serialLookup[appointment.id] || "-"}</td>
                 <td>{appointment.name}</td>
                 <td>{appointment.mobile}</td>
                 <td>{appointment.city}</td>
@@ -1993,13 +2344,29 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
                 <td>{appointment.appointmentDate}</td>
                 <td><span className="chip">{appointment.status}</span></td>
                 <td>
-                  <button
-                    className="ghost-button small"
-                    onClick={() => advanceAppointmentStatus(appointment.id)}
-                    type="button"
-                  >
-                    Advance
-                  </button>
+                  <div className="table-actions">
+                    <button
+                      className="ghost-button small"
+                      onClick={() => startEditing(appointment)}
+                      type="button"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="ghost-button small"
+                      onClick={() => advanceAppointmentStatus(appointment.id)}
+                      type="button"
+                    >
+                      Advance
+                    </button>
+                    <button
+                      className="danger-button small"
+                      onClick={() => archiveAppointment(appointment.id)}
+                      type="button"
+                    >
+                      Archive
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -2010,7 +2377,7 @@ function AppointmentsView({ addAppointment, appointments, advanceAppointmentStat
   );
 }
 
-function AutomationsView({ automationTasks, completeAutomationTask }) {
+function AutomationsView({ archiveAutomationTask, automationTasks, completeAutomationTask }) {
   return (
     <section className="panel full-panel">
       <div className="panel-head">
@@ -2043,14 +2410,23 @@ function AutomationsView({ automationTasks, completeAutomationTask }) {
                 <td><span className="chip">{task.status}</span></td>
                 <td>{task.message}</td>
                 <td>
-                  <button
-                    className="ghost-button small"
-                    disabled={task.status === "done"}
-                    onClick={() => completeAutomationTask(task.id)}
-                    type="button"
-                  >
-                    {task.status === "done" ? "Completed" : "Mark done"}
-                  </button>
+                  <div className="table-actions">
+                    <button
+                      className="ghost-button small"
+                      disabled={task.status === "done"}
+                      onClick={() => completeAutomationTask(task.id)}
+                      type="button"
+                    >
+                      {task.status === "done" ? "Completed" : "Mark done"}
+                    </button>
+                    <button
+                      className="danger-button small"
+                      onClick={() => archiveAutomationTask(task.id)}
+                      type="button"
+                    >
+                      Archive
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -2103,9 +2479,9 @@ function SettingsView({ clinic, saveClinic }) {
             onChange={(event) => setForm((currentForm) => ({ ...currentForm, plan: event.target.value }))}
             value={form.plan}
           >
-            <option value="Free Plan">Free Plan</option>
-            <option value="Growth Plan">Growth Plan</option>
-            <option value="Premium Plan">Premium Plan</option>
+              <option value="Starter Plan">Starter Plan</option>
+              <option value="Growth Plan">Growth Plan</option>
+              <option value="Pro Plan">Pro Plan</option>
           </select>
         </label>
         <label>

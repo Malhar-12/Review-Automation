@@ -428,14 +428,16 @@ textarea {
 
 .primary-button,
 .ghost-button,
-.link-button {
+.link-button,
+.danger-button {
   border-radius: 999px;
   padding: 13px 18px;
   font-weight: 700;
 }
 
 .primary-button,
-.ghost-button {
+.ghost-button,
+.danger-button {
   border: 0;
 }
 
@@ -449,6 +451,12 @@ textarea {
   background: rgba(255, 255, 255, 0.8);
   color: var(--text);
   border: 1px solid var(--line);
+}
+
+.danger-button {
+  background: rgba(154, 63, 87, 0.1);
+  color: var(--primary-deep);
+  border: 1px solid rgba(154, 63, 87, 0.18);
 }
 
 .ghost-button:disabled {
@@ -833,10 +841,27 @@ th {
   color: var(--text);
 }
 
+.flow-meta {
+  color: var(--primary-deep);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .campaign-metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+  margin-top: 16px;
+}
+
+.table-actions,
+.card-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.card-actions {
   margin-top: 16px;
 }
 
