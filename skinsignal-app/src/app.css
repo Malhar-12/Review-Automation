@@ -209,6 +209,15 @@ textarea {
   gap: 14px;
 }
 
+.selected-plan-banner {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(197, 95, 118, 0.12);
+  border: 1px solid rgba(154, 63, 87, 0.12);
+  color: var(--primary-deep);
+  font-weight: 700;
+}
+
 .auth-submit,
 .auth-switch {
   width: 100%;
@@ -269,7 +278,7 @@ textarea {
 .public-price-list {
   padding-left: 20px;
   line-height: 1.8;
-  margin: 14px 0 0;
+  margin: 14px 0 18px;
 }
 
 .user-chip {

@@ -14,6 +14,7 @@ import { getSchemaHelp, loadRemoteState, pushRemoteState } from "./supabaseState
 
 const navItems = ["Dashboard", "Appointments", "Patients", "Reviews", "Campaigns", "Automations", "Settings"];
 const storageKey = "reviewpulse-console-state";
+const pendingPlanKey = "reviewpulse-selected-plan";
 const clinicSeed = { id: "default-clinic", ...initialClinic };
 
 function getCurrentRoute() {
@@ -70,6 +71,39 @@ function isClinicProfileComplete(clinic) {
       clinic?.owner?.trim() &&
       clinic?.googleReviewLink?.trim()
   );
+}
+
+function loadPendingPlan() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(pendingPlanKey);
+}
+
+function savePendingPlan(planId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!planId) {
+    window.localStorage.removeItem(pendingPlanKey);
+    return;
+  }
+
+  window.localStorage.setItem(pendingPlanKey, planId);
+}
+
+function getPlanLabel(planId) {
+  if (planId === "pro") {
+    return "Pro Plan";
+  }
+
+  if (planId === "growth") {
+    return "Growth Plan";
+  }
+
+  return "Starter Plan";
 }
 
 function buildReplyDraft(review, clinic) {
@@ -312,6 +346,7 @@ function App() {
   const [notice, setNotice] = useState("Your workspace now saves changes in this browser and can sync with Supabase.");
   const [syncStatus, setSyncStatus] = useState("local");
   const [clinic, setClinic] = useState(ensureClinicId(storedState?.clinic ?? clinicSeed));
+  const [selectedPlanId, setSelectedPlanId] = useState(loadPendingPlan);
   const [reviews, setReviews] = useState(storedState?.reviews ?? initialReviews);
   const [patients, setPatients] = useState(storedState?.patients ?? initialPatients);
   const [campaigns, setCampaigns] = useState(storedState?.campaigns ?? initialCampaigns);
@@ -392,6 +427,10 @@ function App() {
       setActiveView("Dashboard");
     }
   }, [activeView]);
+
+  useEffect(() => {
+    savePendingPlan(selectedPlanId);
+  }, [selectedPlanId]);
 
   useEffect(() => {
     setPatients((currentPatients) => {
@@ -1039,9 +1078,15 @@ function App() {
   }
 
   function saveClinic(updates) {
-    setClinic((currentClinic) => ({ ...currentClinic, ...updates }));
+    const nextClinic = { ...clinic, ...updates };
+    setClinic(nextClinic);
+
+    if (isClinicProfileComplete(nextClinic)) {
+      setSelectedPlanId(null);
+    }
+
     setNotice(
-      isClinicProfileComplete(updates)
+      isClinicProfileComplete(nextClinic)
         ? "Clinic settings saved."
         : "Practice profile saved locally. Add the remaining details to unlock cloud sync."
     );
@@ -1090,6 +1135,8 @@ function App() {
           authError={authError}
           clinicIsComplete={clinicIsComplete}
           openDashboard={() => navigateTo("/app")}
+          selectedPlanId={selectedPlanId}
+          setSelectedPlanId={setSelectedPlanId}
           session={session}
           setAuthError={setAuthError}
         />
@@ -1102,6 +1149,8 @@ function App() {
         authError={authError}
         clinicIsComplete={clinicIsComplete}
         openDashboard={() => navigateTo("/app")}
+        selectedPlanId={selectedPlanId}
+        setSelectedPlanId={setSelectedPlanId}
         session={session}
         setAuthError={setAuthError}
       />
@@ -1110,7 +1159,12 @@ function App() {
 
   if (session && !clinicIsComplete) {
     return (
-      <ClinicSetupScreen clinic={clinic} handleLogout={handleLogout} saveClinic={saveClinic} />
+      <ClinicSetupScreen
+        clinic={clinic}
+        handleLogout={handleLogout}
+        saveClinic={saveClinic}
+        selectedPlanId={selectedPlanId}
+      />
     );
   }
 
@@ -1240,7 +1294,15 @@ function App() {
   );
 }
 
-function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAuthError }) {
+function AuthScreen({
+  authError,
+  clinicIsComplete,
+  openDashboard,
+  selectedPlanId,
+  session,
+  setAuthError,
+  setSelectedPlanId
+}) {
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -1249,6 +1311,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
   const [showSwitchAccount, setShowSwitchAccount] = useState(false);
   const plans = [
     {
+      id: "starter",
       name: "Starter",
       price: "INR 0",
       suffix: "/1st month",
@@ -1256,6 +1319,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
       features: ["1 practice workspace", "Appointments + patient tracking", "Review requests", "Basic reports"]
     },
     {
+      id: "growth",
       name: "Growth",
       price: "INR 3,999",
       suffix: "/month",
@@ -1264,6 +1328,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
       featured: true
     },
     {
+      id: "pro",
       name: "Pro",
       price: "INR 7,999",
       suffix: "/month",
@@ -1271,6 +1336,15 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
       features: ["Everything in Growth", "Priority support", "Future multi-user controls"]
     }
   ];
+
+  const selectedPlan = plans.find((plan) => plan.id === selectedPlanId) ?? plans[0];
+
+  useEffect(() => {
+    if (!session) {
+      setEmail("");
+      setPassword("");
+    }
+  }, [session]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -1343,6 +1417,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
                     className="primary-button"
                     onClick={() => {
                       setMode("signup");
+                      setSelectedPlanId("starter");
                       setAuthError("");
                       setStatusMessage("");
                       window.location.hash = "#access";
@@ -1401,7 +1476,7 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
                     : "Your account is ready. Complete clinic details first, then start using the dashboard."
                   : mode === "signin"
                     ? "Sign in to open your live review automation workspace."
-                    : "Create your account and start onboarding your practice."}
+                    : `Create your account and start onboarding your practice on the ${selectedPlan.name} plan.`}
               </p>
             </div>
 
@@ -1416,6 +1491,8 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
                   onClick={() => {
                     setShowSwitchAccount(true);
                     setMode("signin");
+                    setEmail("");
+                    setPassword("");
                     setAuthError("");
                     setStatusMessage("");
                   }}
@@ -1425,12 +1502,19 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
                 </button>
               </div>
             ) : (
-              <form className="auth-form" onSubmit={handleSubmit}>
+              <form autoComplete="off" className="auth-form" onSubmit={handleSubmit}>
+                {mode === "signup" ? (
+                  <div className="selected-plan-banner">
+                    Selected plan: <strong>{selectedPlan.name}</strong>
+                  </div>
+                ) : null}
                 <label>
                   <span className="settings-label">Email</span>
                   <input
-                    autoComplete="email"
+                    autoComplete="off"
+                    name="reviewpulse-access-email"
                     onChange={(event) => setEmail(event.target.value)}
+                    spellCheck={false}
                     type="email"
                     value={email}
                   />
@@ -1438,8 +1522,9 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
                 <label>
                   <span className="settings-label">Password</span>
                   <input
-                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    autoComplete="new-password"
                     minLength={6}
+                    name="reviewpulse-access-password"
                     onChange={(event) => setPassword(event.target.value)}
                     type="password"
                     value={password}
@@ -1459,6 +1544,8 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
               onClick={() => {
                 setMode((currentMode) => (currentMode === "signin" ? "signup" : "signin"));
                 setShowSwitchAccount(true);
+                setEmail("");
+                setPassword("");
                 setAuthError("");
                 setStatusMessage("");
               }}
@@ -1495,9 +1582,9 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
             <p className="eyebrow">Pricing</p>
             <h2>Simple plans for clinics growing with automation.</h2>
           </div>
-          <div className="public-pricing-grid">
-            {plans.map((plan) => (
-              <article key={plan.name} className={`public-price-card ${plan.featured ? "featured" : ""}`}>
+            <div className="public-pricing-grid">
+              {plans.map((plan) => (
+                <article key={plan.name} className={`public-price-card ${plan.featured ? "featured" : ""}`}>
                 <p className="price-plan">{plan.name}</p>
                 <strong className="public-price-value">{plan.price}<span>{plan.suffix || "/month"}</span></strong>
                 <p className="muted">{plan.detail}</p>
@@ -1506,6 +1593,20 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
                     <li key={feature}>{feature}</li>
                   ))}
                 </ul>
+                <button
+                  className={`small ${plan.featured ? "primary-button" : "ghost-button"}`}
+                  onClick={() => {
+                    setSelectedPlanId(plan.id);
+                    setMode("signup");
+                    setShowSwitchAccount(true);
+                    setAuthError("");
+                    setStatusMessage("");
+                    window.location.hash = "#access";
+                  }}
+                  type="button"
+                >
+                  Choose {plan.name}
+                </button>
               </article>
             ))}
           </div>
@@ -1515,12 +1616,20 @@ function AuthScreen({ authError, clinicIsComplete, openDashboard, session, setAu
   );
 }
 
-function ClinicSetupScreen({ clinic, handleLogout, saveClinic }) {
+function ClinicSetupScreen({ clinic, handleLogout, saveClinic, selectedPlanId }) {
   const [form, setForm] = useState(clinic);
 
   useEffect(() => {
     setForm(clinic);
   }, [clinic]);
+
+  useEffect(() => {
+    if (!selectedPlanId) {
+      return;
+    }
+
+    setForm((currentForm) => ({ ...currentForm, plan: getPlanLabel(selectedPlanId) }));
+  }, [selectedPlanId]);
 
   function handleSubmit(event) {
     event.preventDefault();
