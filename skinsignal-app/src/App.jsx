@@ -1309,6 +1309,7 @@ function AuthScreen({
   const [statusMessage, setStatusMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showSwitchAccount, setShowSwitchAccount] = useState(false);
+  const [authFieldsArmed, setAuthFieldsArmed] = useState(false);
   const plans = [
     {
       id: "starter",
@@ -1345,6 +1346,28 @@ function AuthScreen({
       setPassword("");
     }
   }, [session]);
+
+  useEffect(() => {
+    setAuthFieldsArmed(false);
+  }, [mode, showSwitchAccount, session]);
+
+  function openAccessPanel(nextMode, planId = null) {
+    setMode(nextMode);
+    setShowSwitchAccount(true);
+    setAuthFieldsArmed(false);
+    setEmail("");
+    setPassword("");
+    setAuthError("");
+    setStatusMessage("");
+
+    if (planId) {
+      setSelectedPlanId(planId);
+    } else if (nextMode === "signup" && !selectedPlanId) {
+      setSelectedPlanId("starter");
+    }
+
+    window.location.hash = "#access";
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -1413,29 +1436,10 @@ function AuthScreen({
             <div className="public-actions">
               {session ? null : (
                 <>
-                  <button
-                    className="primary-button"
-                    onClick={() => {
-                      setMode("signup");
-                      setSelectedPlanId("starter");
-                      setAuthError("");
-                      setStatusMessage("");
-                      window.location.hash = "#access";
-                    }}
-                    type="button"
-                  >
+                  <button className="primary-button" onClick={() => openAccessPanel("signup", "starter")} type="button">
                     Start free
                   </button>
-                  <button
-                    className="ghost-button"
-                    onClick={() => {
-                      setMode("signin");
-                      setAuthError("");
-                      setStatusMessage("");
-                      window.location.hash = "#access";
-                    }}
-                    type="button"
-                  >
+                  <button className="ghost-button" onClick={() => openAccessPanel("signin")} type="button">
                     Login
                   </button>
                 </>
@@ -1489,12 +1493,7 @@ function AuthScreen({
                 <button
                   className="ghost-button auth-submit"
                   onClick={() => {
-                    setShowSwitchAccount(true);
-                    setMode("signin");
-                    setEmail("");
-                    setPassword("");
-                    setAuthError("");
-                    setStatusMessage("");
+                    openAccessPanel("signin");
                   }}
                   type="button"
                 >
@@ -1503,6 +1502,20 @@ function AuthScreen({
               </div>
             ) : (
               <form autoComplete="off" className="auth-form" onSubmit={handleSubmit}>
+                <input
+                  autoComplete="username"
+                  className="auth-trap"
+                  name="username"
+                  tabIndex={-1}
+                  type="email"
+                />
+                <input
+                  autoComplete="current-password"
+                  className="auth-trap"
+                  name="password"
+                  tabIndex={-1}
+                  type="password"
+                />
                 {mode === "signup" ? (
                   <div className="selected-plan-banner">
                     Selected plan: <strong>{selectedPlan.name}</strong>
@@ -1511,9 +1524,12 @@ function AuthScreen({
                 <label>
                   <span className="settings-label">Email</span>
                   <input
-                    autoComplete="off"
-                    name="reviewpulse-access-email"
+                    autoComplete={mode === "signup" ? "off" : "section-reviewpulse-signin username"}
+                    name={`reviewpulse-access-email-${mode}`}
+                    onClick={() => setAuthFieldsArmed(true)}
                     onChange={(event) => setEmail(event.target.value)}
+                    onFocus={() => setAuthFieldsArmed(true)}
+                    readOnly={!authFieldsArmed}
                     spellCheck={false}
                     type="email"
                     value={email}
@@ -1522,10 +1538,13 @@ function AuthScreen({
                 <label>
                   <span className="settings-label">Password</span>
                   <input
-                    autoComplete="new-password"
+                    autoComplete={mode === "signup" ? "new-password" : "section-reviewpulse-signin current-password"}
                     minLength={6}
-                    name="reviewpulse-access-password"
+                    name={`reviewpulse-access-password-${mode}`}
+                    onClick={() => setAuthFieldsArmed(true)}
                     onChange={(event) => setPassword(event.target.value)}
+                    onFocus={() => setAuthFieldsArmed(true)}
+                    readOnly={!authFieldsArmed}
                     type="password"
                     value={password}
                   />
@@ -1542,12 +1561,7 @@ function AuthScreen({
             <button
               className="link-button auth-switch"
               onClick={() => {
-                setMode((currentMode) => (currentMode === "signin" ? "signup" : "signin"));
-                setShowSwitchAccount(true);
-                setEmail("");
-                setPassword("");
-                setAuthError("");
-                setStatusMessage("");
+                openAccessPanel(mode === "signin" ? "signup" : "signin");
               }}
               type="button"
             >
@@ -1584,7 +1598,12 @@ function AuthScreen({
           </div>
             <div className="public-pricing-grid">
               {plans.map((plan) => (
-                <article key={plan.name} className={`public-price-card ${plan.featured ? "featured" : ""}`}>
+                <article
+                  key={plan.name}
+                  className={`public-price-card ${plan.featured ? "featured" : ""} ${
+                    selectedPlan.id === plan.id ? "selected" : ""
+                  }`}
+                >
                 <p className="price-plan">{plan.name}</p>
                 <strong className="public-price-value">{plan.price}<span>{plan.suffix || "/month"}</span></strong>
                 <p className="muted">{plan.detail}</p>
@@ -1595,14 +1614,7 @@ function AuthScreen({
                 </ul>
                 <button
                   className={`small ${plan.featured ? "primary-button" : "ghost-button"}`}
-                  onClick={() => {
-                    setSelectedPlanId(plan.id);
-                    setMode("signup");
-                    setShowSwitchAccount(true);
-                    setAuthError("");
-                    setStatusMessage("");
-                    window.location.hash = "#access";
-                  }}
+                  onClick={() => openAccessPanel("signup", plan.id)}
                   type="button"
                 >
                   Choose {plan.name}

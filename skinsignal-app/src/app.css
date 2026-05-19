@@ -209,6 +209,15 @@ textarea {
   gap: 14px;
 }
 
+.auth-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .selected-plan-banner {
   padding: 12px 14px;
   border-radius: 16px;
@@ -259,6 +268,11 @@ textarea {
 .public-price-card.featured {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 244, 234, 0.95));
   transform: translateY(-6px);
+}
+
+.public-price-card.selected {
+  border-color: rgba(154, 63, 87, 0.34);
+  box-shadow: 0 0 0 3px rgba(197, 95, 118, 0.12), var(--shadow);
 }
 
 .public-price-value {
